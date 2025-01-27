@@ -1,0 +1,25 @@
+*.exe
+pdf_and_png/
+__pycache__/
+*.out
+*.json
+*.html
+key.json
+nohup.out
+*.pyc
+*.ini
+/cogs/__pycache__/
+contests.yaml
+reminders.yaml
+
+# python generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+*.lock
+
+# venv
+.venv
