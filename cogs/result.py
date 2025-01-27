@@ -1,377 +1,379 @@
-import datetime
-import os
-import traceback
-from typing import Dict, List
-import aiohttp
 import discord
-import yaml
-from bs4 import BeautifulSoup
 from discord import app_commands
-from discord.ext import commands, tasks
-from discord.ui import Button, Select, View, ChannelSelect
-from env.config import Config
-import time
+from discord.ext import commands
+from pdf2image.exceptions import (
+    PDFInfoNotInstalledError,
+    PDFPageCountError,
+    PDFSyntaxError
+)
+from pdf2image import convert_from_path
+import os
 import requests
 import urllib.parse
 import re
+import math
 from time import sleep
+import gspread
+from google.oauth2.service_account import Credentials
+from PIL import Image
 
-CONTESTS_FILE = "asset/contests.yaml"
-REMINDERS_FILE = "asset/reminders.yaml"
-RESULTS_FILE = "asset/results.yaml"
-ATCODER_CONTESTS_URL = "https://atcoder.jp/contests/"
-
-config = Config()
-ATCODER_USERNAME = config.config["ATCODER"][
-    "ATCODER_USERNAME"
-]  # config.iniからAtCoderのユーザー名を取得
-ATCODER_PASSWORD = config.config["ATCODER"][
-    "ATCODER_PASSWORD"
-]  # config.iniからAtCoderのパスワードを取得
-
-
-def login():
-    """AtCoder にログインし、セッションを返す"""
-    print("ログイン中…")
-    login_url = "https://atcoder.jp/login"
-    session = requests.session()
-    res = session.get(login_url)
-    revel_session = res.cookies.get_dict().get("REVEL_SESSION")
-
-    if revel_session:
-        revel_session = urllib.parse.unquote(revel_session)
-        csrf_token_match = re.search(r"csrf_token\:(.*)_TS", revel_session)
-        if csrf_token_match:
-            csrf_token = csrf_token_match.groups()[0].replace("\x00\x00", "")
-            sleep(1)
-            headers = {"content-type": "application/x-www-form-urlencoded"}
-            params = {
-                "username": ATCODER_USERNAME,
-                "password": ATCODER_PASSWORD,
-                "csrf_token": csrf_token,
-            }
-            data = {"continue": "https://atcoder.jp:443/home"}
-            res = session.post(login_url, params=params, data=data, headers=headers)
-        try:
-            res.raise_for_status()
-            return session
-        except requests.exceptions.HTTPError as e:
-            print(f"ログインエラー: {e}")
-            return None
-    else:
-        print("Error: REVEL_SESSION cookie not found")
-    return None  # ログイン失敗
-
-
-def get_task_list(contest_id):
-    """コンテストのタスクリストを取得する"""
-    url = f"https://atcoder.jp/contests/{contest_id}/tasks"
-    response = requests.get(url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    tasks = []
-    task_table = soup.find("table", {"class": "table table-bordered table-striped"})
-    if task_table:
-        task_links = task_table.find_all("a")
-        for link in task_links:
-            task_url = link.get("href")
-            if task_url and "/tasks/" in task_url:
-                task_id = task_url.split("/")[-1]
-                if "_" in task_id:
-                    tasks.append(
-                        task_id.split("_")[-1].upper()
-                    )  # タスクIDを大文字に変換
-    return tasks
-
-
-def get_latest_atcoder_results(contest_id):
-    """最新の AtCoder コンテスト結果を取得する"""
-    session = login()
-    if session is None:  # ログイン失敗時の処理を追加
-        return None
-    print("ログイン完了")
-
-    url = f"https://atcoder.jp/contests/{contest_id}/standings/json"
-    response = session.get(url)
-    response.raise_for_status()
-    data = response.json()
-
-    results = []
-    dennoh_rank = 1
-    for row in data["StandingsData"]:
-        affiliation = row.get("Affiliation")
-        if affiliation and "電子電脳技術研究会" in affiliation:
-            user_name = row["UserScreenName"]
-            rank = f"{dennoh_rank} ({row['Rank']})"
-            total_score = row["TotalResult"]["Score"] / 100
-            rating_change = f"{row.get('OldRating', '')} → {row.get('Rating', '')} ({row.get('Rating', 0) - row.get('OldRating', 0)})"
-            task_results = row.get("TaskResults", {})
-
-            task_data = []
-            for task in get_task_list(contest_id):
-                task_result = task_results.get(task)
-                if task_result:
-                    count = task_result["Count"]
-                    penalty = task_result["Penalty"]
-                    failure = task_result["Failure"]  # Failure を取得
-                    if task_result["Score"] >= 1:
-                        score = task_result["Score"] // 100
-                        task_data.append(
-                            f"{score} ({penalty})" if penalty > 0 else f"{score}"
-                        )
-                    elif task_result["Score"] == 0:  # Score が 0 の場合
-                        task_data.append(f"({failure + penalty})")
-                        print("スコア0だった", failure, penalty)
-                    else:
-                        task_data.append(f"({penalty})")
-                else:
-                    task_data.append("-")
-
-            results.append([rank, user_name, total_score] + task_data + [rating_change])
-            dennoh_rank += 1
-    return results
-
-
-class Result(commands.Cog):
+class Contest_result(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.results_config = (
-            self.load_results_config()
-        )  # 送信済みコンテストIDの読み込み
-        self.check_contest_results.start()  # 定期的にコンテスト結果をチェックするタスクを開始
 
-    def load_results_config(self) -> List[str]:
-        """送信済みコンテストIDをYAMLファイルから読み込む"""
-        if os.path.exists(RESULTS_FILE):
-            with open(RESULTS_FILE, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-                if data is None:
-                    return []
-                return data
-        return []
+    async def get_rating_color(self, rating):
+        """Rating に応じた色を返す"""
+        if rating < 400:
+            return {'red': 0.5, 'green': 0.5, 'blue': 0.5}  # 灰色
+        elif rating < 800:
+            return {'red': 0.47, 'green': 0.262, 'blue': 0.082}  # 茶色
+        elif rating < 1200:
+            return {'red': 0.215, 'green': 0.494, 'blue': 0.133}  # 緑色
+        elif rating < 1600:
+            return {'red': 0.337, 'green': 0.741, 'blue': 0.749}  # 水色
+        elif rating < 2000:
+            return {'red': 0, 'green': 0, 'blue': 0.960}  # 青色
+        elif rating < 2400:
+            return {'red': 0.752, 'green': 0.752, 'blue': 0.239}  # 黄色
+        elif rating < 2800:
+            return {'red': 0.937, 'green': 0.529, 'blue': 0.200}  # 橙色
+        else:
+            return {'red': 0.917, 'green': 0.200, 'blue': 0.137}  # 赤色
 
-    def save_results_config(self, results_config: List[str]):
-        """送信済みコンテストIDをYAMLファイルに保存する"""
-        with open(RESULTS_FILE, "w", encoding="utf-8") as f:
-            yaml.dump(
-                results_config,
-                f,
-                allow_unicode=True,
-                default_flow_style=False,
-                sort_keys=False,
+    async def connect_to_spreadsheet(self):
+        """Google スプレッドシートに接続する"""
+        try:
+            scopes = [
+                'https://www.googleapis.com/auth/spreadsheets',
+                'https://www.googleapis.com/auth/drive'
+            ]
+            credentials = Credentials.from_service_account_file(
+                SERVICE_ACCOUNT_FILE, scopes=scopes
             )
+            gc = gspread.authorize(credentials)
+            print("接続完了")
+            return gc.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME),gc.open_by_key(SPREADSHEET_ID)
+        except Exception as e:
+            print(f"Error connecting to spreadsheet: {e}")
+            raise e
+        
+    async def write_to_spreadsheet(self, worksheet, data, workbook):
+        """スプレッドシートにデータを書き込む"""
+        worksheet.clear()
 
-    @app_commands.command(
-        name="send_result", description="指定されたコンテストIDの結果を手動で送信します"
-    )
-    async def send_result_command(
-        self, interaction: discord.Interaction, contest_id: str
-    ):
-        """コンテスト結果送信コマンド"""
-        await (
-            interaction.response.defer()
-        )  # interaction.response.defer() で処理を遅延させる
-        channel_id = self.get_result_channel_id(interaction.guild_id)
-        if not channel_id:
-            await interaction.followup.send(
-                "結果送信チャンネルが設定されていません。/set_result_channel で設定してください。",
-                ephemeral=True,
-            )
-            return
-        channel = self.bot.get_channel(int(channel_id))
-        if not channel:
-            await interaction.followup.send(
-                f"指定されたチャンネルが見つかりません。チャンネルID: {channel_id}",
-                ephemeral=True,
-            )
-            return
+        print("データ書き込み中…")
 
-        await self.send_contest_result(contest_id, channel)
-        await interaction.followup.send(
-            f"コンテスト {contest_id} の結果を送信しました。", ephemeral=True
-        )
+        # ヘッダー行とデータ行をまとめて書き込み
+        worksheet.update([["順位", "ユーザー", "得点", "A", "B", "C", "D", "E", "F", "G", "perf", "レート変化"]] + data)
 
-    async def send_contest_result(self, contest_id, channel):
-        """コンテスト結果を送信する"""
-        results = get_latest_atcoder_results(contest_id)
-        if results is None:  # AtCoderログインに失敗した場合
-            await channel.send(
-                f"コンテスト {contest_id} の結果取得に失敗しました。AtCoderへのログインに失敗した可能性があります。"
-            )
-            return
-        if not results:
-            await channel.send(
-                f"コンテスト {contest_id} の結果が見つかりませんでした。"
-            )
-            return
-
-        embed = discord.Embed(
-            title=f"AtCoder コンテスト結果 ({contest_id})", color=discord.Color.blue()
-        )
-        output = ""
-        header = "| 順位 | ユーザー名 | 合計 |"
-        task_header = ""
-        tasks = get_task_list(contest_id)
-        for task in tasks:
-            task_header += f" {task} |"
-        header += task_header + " Rating変動 |\n"
-        header += "|:---:|:---|:---:|"
-        for _ in tasks:
-            header += ":---:|"
-        header += ":---:|\n"
-        output += header
-
-        for row in results:
-            rank, user_name, total_score, *task_scores, rating_change = row
-            row_str = f"| {rank} | {user_name} | {total_score} |"
-            for task_score in task_scores:
-                row_str += f" {task_score} |"
-            row_str += f" {rating_change} |\n"
-            output += row_str
-
-        embed.description = (
-            f"```markdown\n{output}\n```"  # code block + markdown tableで表示
-        )
-        await channel.send(embed=embed)
-        self.results_config.append(contest_id)  # 送信済みコンテストIDリストに追加
-        self.save_results_config(self.results_config)  # results.yamlに保存
-
-    def get_result_channel_id(self, guild_id: int) -> str or None:
-        """結果送信チャンネルIDを取得する"""
-        guild_id_str = str(guild_id)
-        reminders = self.load_reminders()  # reminders.yamlから設定を読み込む
-        if guild_id_str in reminders and "result_channel_id" in reminders[guild_id_str]:
-            return reminders[guild_id_str]["result_channel_id"]
-        return None
-
-    def load_reminders(self) -> Dict:
-        """リマインダー設定をYAMLファイルから読み込む (reminder.pyからコピー)"""
-        if os.path.exists(REMINDERS_FILE):
-            with open(REMINDERS_FILE, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-                if data is None:  # yaml.safe_load() が None を返した場合の処理を追加
-                    return {}
-                return data
-        return {}
-
-    def save_reminders(self, reminders: Dict):
-        """リマインダー設定をYAMLファイルに保存する (reminder.pyからコピー)"""
-        with open(REMINDERS_FILE, "w", encoding="utf-8") as f:
-            yaml.dump(
-                reminders,
-                f,
-                allow_unicode=True,
-                default_flow_style=False,
-                sort_keys=False,
-            )
-
-    @app_commands.command(
-        name="set_result_channel",
-        description="コンテスト結果を送信するチャンネルを設定",
-    )
-    async def set_result_channel(self, interaction: discord.Interaction):
-        """コンテスト結果送信チャンネル設定コマンド"""
-        guild_id = str(interaction.guild_id)
-        view = ResultChannelSelectView(self, guild_id)  # ChannelSelectView を使用
-        await interaction.response.send_message(
-            "コンテスト結果送信チャンネルを選択してください", view=view, ephemeral=False
-        )
-
-    @tasks.loop(minutes=1)  # 1分おきにコンテスト終了時刻を確認
-    async def check_contest_results(self):
-        """定期的にコンテスト終了時刻を確認し、結果を送信する"""
-        now = datetime.datetime.now()
-        contests = self.load_contests()  # contests.yamlからコンテスト情報を読み込む
-        if not contests:
-            return
-
-        for contest in contests:
-            if contest["type"] == "AHC":  # AHCは対象外
+        # Rating とパフォに応じてセルの文字色を変更
+        for i, row in enumerate(data):
+            # Rating から色を取得
+            rating_change_str = row[11]
+            try:
+                if rating_change_str != "-":
+                    rating = int(rating_change_str.split("→")[1].split("(")[0].strip())
+                    rating_color = await self.get_rating_color(rating) # 変数名を変更
+                    if rating_color:
+                        worksheet.format(f'B{i+2}', {'textFormat': {'foregroundColor': rating_color}})
+            except (ValueError, IndexError) as e:
+                print(f"Rating の取得中にエラーが発生しました: {e}")
                 continue
-            contest_id = contest["url"].split("/")[-1]
-            if contest_id in self.results_config:  # 送信済みコンテストはスキップ
+                
+            # パフォから色を取得
+            performance = row[10]
+            try:
+                if performance != "-":
+                    performance = int(performance)
+                    performance_color = await self.get_rating_color(performance) 
+                    if performance_color:
+                        worksheet.format(f'K{i+2}', {'textFormat': {'foregroundColor': performance_color}}) # パフォのセルに色を設定
+            except (ValueError, TypeError) as e:
+                print(f"パフォの取得中にエラーが発生しました: {e}")
                 continue
 
-            end_time = datetime.datetime.strptime(
-                contest["end_time"], "%Y-%m-%d %H:%M:%S"
-            )
-            if now >= end_time:  # コンテスト終了時刻になったら
-                print(
-                    f"コンテスト {contest['name']} が終了しました。結果を送信します。"
-                )
-                for guild_id in (
-                    self.get_guilds_with_result_channel()
-                ):  # 結果送信チャンネルが設定されているサーバーを取得
-                    channel_id = self.get_result_channel_id(guild_id)
-                    if channel_id:
-                        channel = self.bot.get_channel(int(channel_id))
-                        if channel:
-                            await self.send_contest_result(
-                                contest_id, channel
-                            )  # コンテスト結果を送信
-                            print(
-                                f"コンテスト {contest['name']} の結果をサーバー {guild_id} に送信しました。"
-                            )
+        # penalty 部分だけを赤くする
+        start_col = 3  # penalty 部分の開始列 (A=0, B=1, ...)
+        end_col = 9  # penalty 部分の終了列
+        for row_index, row_data in enumerate(data):
+            for col_index in range(start_col, end_col + 1):
+                cell_value = row_data[col_index]
+                if cell_value != "-" and "(" in cell_value and ")" in cell_value:
+                    # penalty 部分の開始位置を取得
+                    penalty_start = cell_value.find("(")
+
+                    requests = [
+                        {
+                            "updateCells": {
+                                "start": {
+                                    "sheetId": worksheet.id,
+                                    "rowIndex": row_index + 1, # ヘッダー行があるので +1
+                                    "columnIndex": col_index
+                                },
+                                "rows": [
+                                    {
+                                        "values": [
+                                            {
+                                                "userEnteredValue": {
+                                                    "stringValue": cell_value
+                                                },
+                                                "userEnteredFormat": {
+                                                    "textFormat": {
+                                                        "foregroundColor": {
+                                                            "blue": 0.29803923, 
+                                                            "green": 0.654902, 
+                                                            "red": 0.29803923
+                                                        },
+                                                        "foregroundColorStyle": {
+                                                            "rgbColor": {
+                                                            "blue": 0.29803923, 
+                                                            "green": 0.654902, 
+                                                            "red": 0.29803923
+                                                            }
+                                                        },
+                                                        "fontFamily": "MS PGothic"
+                                                    },
+                                                },
+                                                "textFormatRuns": [
+                                                    {
+                                                        "format": {}  # 最初の部分はデフォルト
+                                                    },
+                                                    {
+                                                        "startIndex": penalty_start,  # penalty 部分から赤色
+                                                        "format": {
+                                                            "foregroundColor": {
+                                                                "red": 1
+                                                            },
+                                                            "foregroundColorStyle":{
+                                                                "rgbColor":{
+                                                                    "red": 1
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "fields": "userEnteredValue,userEnteredFormat,textFormatRuns,userEnteredFormat.textFormat"
+                            }
+                        }
+                    ]
+                    workbook.batch_update({"requests": requests}) 
+        print("データ書き込み完了")
+
+    def login(self):
+        """AtCoder にログインし、セッションを返す"""
+        try:
+            login_url = "https://atcoder.jp/login"
+            session = requests.session()
+            res = session.get(login_url)
+            res.raise_for_status() # HTTPエラーをチェック
+            revel_session = res.cookies.get_dict().get('REVEL_SESSION')
+
+            if not revel_session:
+                raise ValueError("REVEL_SESSION cookie not found")
+
+            revel_session = urllib.parse.unquote(revel_session)
+            csrf_token_match = re.search(r'csrf_token\:(.*)_TS', revel_session)
+            if not csrf_token_match:
+                raise ValueError("csrf_token not found in REVEL_SESSION")
+
+            csrf_token = csrf_token_match.groups()[0].replace('\x00\x00', '')
+            sleep(1)
+            headers = {'content-type': 'application/x-www-form-urlencoded'}
+            params = {
+                'username': ATCODER_USERNAME,
+                'password': ATCODER_PASSWORD,
+                'csrf_token': csrf_token,
+            }
+            data = {
+                'continue': 'https://atcoder.jp:443/home'
+            }
+            res = session.post(login_url, params=params, data=data, headers=headers)
+            res.raise_for_status() # HTTPエラーをチェック
+            return session
+        except Exception as e:
+            print(f"AtCoderログイン中にエラーが発生しました: {e}")
+            return None
+
+    async def get_task_list(self, contest_id):
+        """コンテストIDから問題のリストを生成する"""
+        # contest_number = int(contest_id[3:])  # abcXXX の XXX 部分を数値に変換
+        return [f"{contest_id}_{chr(ord('a') + i)}" for i in range(7)]  # a から g までの問題
+
+
+    async def get_contest_performance(self, contest_id):
+        """コンテストのパフォーマンスを取得する"""
+        url = f"https://raw.githubusercontent.com/key-moon/ac-predictor-data/refs/heads/master/results/{contest_id}.json"
+        if True:
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+
+            performance_data = {}
+            for item in data:
+                performance_data[item['UserScreenName']] = (item['Performance'], item['OldRating'], item['NewRating'])
+
+            return performance_data
+
+    async def get_atcoder_results(self, contest_id):
+        """コンテスト結果を取得する"""
+        if True:
+            session = self.login()
+            if not session:
+                raise ValueError("AtCoder へのログインに失敗しました。")
+
+
+            url = f'https://atcoder.jp/contests/{contest_id}/standings/json'
+            response = session.get(url)
+            response.raise_for_status()
+            data = response.json()
+
+            # パフォーマンスデータを取得
+            performance_data = await self.get_contest_performance(contest_id)
+
+            # IsRated を取得
+            is_rated = data.get('IsRated', True)
+
+            results = []
+            dennoh_rank = 1
+            for row in data['StandingsData']:
+                affiliation = row.get('Affiliation')
+                if affiliation and '電子電脳技術研究会' in affiliation:
+                    try:
+                        user_name = row['UserScreenName']
+
+                        if performance_data:
+                            performance, old_rating, new_rating = performance_data.get(user_name, (None, None, None))
                         else:
-                            print(
-                                f"結果送信チャンネルが見つかりませんでした。サーバーID: {guild_id}, チャンネルID: {channel_id}"
-                            )
+                            performance, old_rating, new_rating = None, None, None
 
-    def get_guilds_with_result_channel(self) -> List[int]:
-        """結果送信チャンネルが設定されているサーバーIDのリストを取得する"""
-        guild_ids = []
-        reminders = self.load_reminders()
-        for guild_id_str, reminder_config in reminders.items():
-            if "result_channel_id" in reminder_config:
-                guild_ids.append(int(guild_id_str))
-        return guild_ids
+                        if performance is None:
+                            performance = 0
+                        elif performance <= 400 and is_rated:
+                            true_performance = round(400 / (math.exp((400 - performance) / 400)))
+                            performance = true_performance
 
-    def load_contests(self) -> List[Dict]:
-        """コンテスト情報をYAMLファイルから読み込む (reminder.pyからコピー)"""
-        if os.path.exists(CONTESTS_FILE):
-            with open(CONTESTS_FILE, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f)
-        return []
+                        rank = f"{dennoh_rank} ({row['Rank']})"
+                        total_score = row['TotalResult']['Score'] / 100
 
-    @check_contest_results.before_loop
-    async def before_check_contest_results(self):
-        await self.bot.wait_until_ready()
+                        if old_rating is not None and new_rating is not None:
+                            rating_change = f"{old_rating} → {new_rating} ({new_rating - old_rating})"
+                        else:
+                            rating_change = "-"
+
+                        task_results = row.get('TaskResults', {})
+                        task_data = []
+                        for task in await self.get_task_list(contest_id):
+                            task_result = task_results.get(task)
+                            if task_result:
+                                try: # task_result の処理中に例外が発生する可能性があるため try-except で囲む
+                                    # count = task_result['Count']
+                                    penalty = task_result['Penalty']
+                                    failure = task_result.get('Failure',0)
+                                    if task_result['Score'] >= 1:
+                                        score = task_result['Score'] // 100
+                                        task_data.append(f"{score} ({penalty})" if penalty > 0 else f"{score}")
+                                    elif task_result['Score'] == 0:
+                                        task_data.append(f"({failure + penalty})")
+                                    else:
+                                        task_data.append(f"({penalty})")
+                                except (KeyError, TypeError) as e: # task_result の処理中に発生する可能性のあるエラーをキャッチ
+                                    print(f"Task result 処理中にエラーが発生しました: {e}, task_result: {task_result}")
+                                    task_data.append("-") # エラーが発生した場合は "-" を追加
+                            else:
+                                task_data.append("-")
+
+                        results.append([rank, user_name, total_score] + task_data + [performance, rating_change])
+                        dennoh_rank += 1
+                    except (KeyError, TypeError) as e: # row の処理中に発生する可能性のあるエラーをキャッチ
+                        print(f"行の処理中にエラーが発生しました: {e}, row: {row}")
+                        continue # エラーが発生した場合は次の行に進む
+            return results
+        
+    async def generate_contest_result_image(self, contest_id='abc001'):
+        """コンテスト結果の画像を生成する"""
+
+        results = await self.get_atcoder_results(contest_id)
+        if not results:
+            print("なんかバグって数値取得できなかったわ")
+            return None
+
+        # スプレッドシートに書き込み
+        print("接続中…")
+        worksheet,workbook = self.connect_to_spreadsheet()
+        await self.write_to_spreadsheet(worksheet, results , workbook)
+
+        # 参加人数を取得
+        num_participants = len(results) + 1 # ヘッダー行も含める
+
+        # PDFとして出力 (URLを直接指定, rangeパラメータを動的に変更)
+        pdf_url = f'https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=pdf' \
+                f'&gid={worksheet.id}' \
+                f'&ir=false&ic=false' \
+                f'&r1=0&c1=0&r2={num_participants}&c2=12' \
+                f'&portrait=false&scale=2&size=B5&fitw=true' \
+                f'&horizontal_alignment=CENTER&vertical_alignment=CENTER' \
+                f'&right_margin=0.00&left_margin=0.00&bottom_margin=0.00&top_margin=0.00'
+        response = requests.get(pdf_url) 
+        response.raise_for_status()
+
+        # 保存先フォルダのパス
+        output_dir = "pdf_and_png"  # Atcotify_v2 フォルダの中に作成する場合
+
+        # フォルダが存在しない場合に作成
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        pdf_path = os.path.join(output_dir, f'{contest_id}.pdf')
+        with open(pdf_path, 'wb') as f:
+            f.write(response.content)
+
+        # PDF を PNG に変換
+        try:
+            print("変換中…")
+            images = convert_from_path(pdf_path)
+            print("変換完了")
+            png_path = f'{contest_id}.png'
+            images[0].save(png_path, 'PNG')
+
+        except (PDFInfoNotInstalledError, PDFPageCountError, PDFSyntaxError) as e:
+            print(f"PDF変換エラー: {e}")
+        
+        # 画像の切り抜き
+        try:
+            img = Image.open(png_path)
+            # 行数を取得
+            num_rows = len(results)
+            # 切り抜く高さを計算
+            crop_height = 37.6 * num_rows
+            cropped_img = img.crop((0, 0, img.width, crop_height))
+            cropped_img.save(png_path)
+            return png_path
+
+        except Exception as e:
+            print(f"画像切り抜きエラー: {e}")
+            return None
 
 
-class ResultChannelSelectView(
-    View
-):  # ChannelSelect 用の View を作成 (reminder.pyからコピー)
-    def __init__(self, cog: Result, guild_id: str):
-        super().__init__(timeout=None)
-        self.cog = cog
-        self.guild_id = guild_id
-        self.add_item(self.create_channel_select())
+    @app_commands.command(name="contest_result", description="コンテスト結果を表示します")
+    @app_commands.describe(contest_id="コンテストID (例: abc001)")
+    async def contest_result(self, interaction: discord.Interaction, contest_id: str):
+        await interaction.response.defer()
 
-    def create_channel_select(self) -> ChannelSelect:
-        """チャンネル選択メニューを作成する (reminder.pyからコピー)"""
-        channel_select = ChannelSelect(
-            channel_types=[discord.ChannelType.text],
-            custom_id="result_channel_select",
-        )
-        channel_select.callback = self.channel_select_callback
-        return channel_select
-
-    async def channel_select_callback(self, interaction: discord.Interaction):
-        """チャンネルが選択されたときのコールバック (reminder.pyからコピー)"""
-        channel = interaction.data["values"][0]  # 選択されたチャンネルIDを取得
-        reminders = self.cog.load_reminders()
-        if self.guild_id not in reminders:
-            reminders[self.guild_id] = {}
-        reminders[self.guild_id]["result_channel_id"] = str(channel)
-        self.cog.save_reminders(reminders)
-        channel_mention = f"<#{channel}>"  # チャンネルメンションを作成
-        embed = discord.Embed(
-            title="コンテスト結果送信チャンネル設定完了！",
-            description=f"コンテスト結果送信チャンネルを {channel_mention} に設定しました！",
-            color=discord.Color.green(),
-        )
-        await interaction.response.edit_message(content=None, view=None, embed=embed)
+        image_path = await self.generate_contest_result_image(contest_id)
+        if image_path:
+            with open(image_path, 'rb') as f:
+                image_file = discord.File(f)
+                embed = discord.Embed(title=f"{contest_id} のコンテスト結果", color=discord.Color.orange()) # オレンジ色
+            embed.set_image(url=f"attachment://{image_path}")
+            await interaction.followup.send(embed=embed, file=image_file)
+        else:
+            embed = discord.Embed(title="エラー", description="対象のデータが見つかりませんでした。", color=discord.Color.red()) # 赤色
+            await interaction.followup.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Result(bot))
+    await bot.add_cog(Contest_result(bot))
