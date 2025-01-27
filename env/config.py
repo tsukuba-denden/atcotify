@@ -25,3 +25,15 @@ class Config:
     @property
     def atcoder_password(self) -> str:
         return str(self.config["ATCODER"]["ATCODER_PASSWORD"])
+
+    @property
+    def google_service_account_file(self) -> str:
+        return str(self.config["GOOGLE"]["SERVICE_ACCOUNT_FILE"])
+
+    @property
+    def google_spreadsheet_id(self) -> str:
+        return str(self.config["GOOGLE"]["SPREADSHEET_ID"])
+
+    @property
+    def google_sheet_name(self) -> str:
+        return str(self.config["GOOGLE"]["SHEET_NAME"])

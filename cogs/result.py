@@ -1,6 +1,7 @@
+# cogs/result.py
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from pdf2image.exceptions import (
     PDFInfoNotInstalledError,
     PDFPageCountError,
@@ -16,10 +17,57 @@ from time import sleep
 import gspread
 from google.oauth2.service_account import Credentials
 from PIL import Image
+import yaml
+from env.config import Config
+import datetime
+
+config = Config()
+
+SERVICE_ACCOUNT_FILE = config.google_service_account_file
+SPREADSHEET_ID = config.google_spreadsheet_id
+SHEET_NAME = config.google_sheet_name
+ATCODER_USERNAME = config.atcoder_username
+ATCODER_PASSWORD = config.atcoder_password
+
+RESULTS_CONFIG_FILE = "asset/results_config.yaml"
+CONTESTS_FILE = "asset/contests.yaml"
 
 class Contest_result(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.results_config = self.load_results_config()
+        self.contests = self.load_contests()
+        self.check_contest_end.start()
+
+    def load_results_config(self):
+        """結果送信チャンネル設定をYAMLファイルから読み込む"""
+        if os.path.exists(RESULTS_CONFIG_FILE):
+            with open(RESULTS_CONFIG_FILE, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f)
+                if config is None:
+                    return {}
+                return config
+        return {}
+
+    def save_results_config(self, config):
+        """結果送信チャンネル設定をYAMLファイルに保存する"""
+        with open(RESULTS_CONFIG_FILE, "w", encoding="utf-8") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+    def load_contests(self):
+        """コンテスト情報をYAMLファイルから読み込む"""
+        if os.path.exists(CONTESTS_FILE):
+            with open(CONTESTS_FILE, "r", encoding="utf-8") as f:
+                contests = yaml.safe_load(f)
+                if contests is None:
+                    return []
+                return contests
+        return []
+
+    def save_contests(self, contests):
+        """コンテスト情報をYAMLファイルに保存する"""
+        with open(CONTESTS_FILE, "w", encoding="utf-8") as f:
+            yaml.dump(contests, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
     async def get_rating_color(self, rating):
         """Rating に応じた色を返す"""
@@ -207,7 +255,7 @@ class Contest_result(commands.Cog):
     async def get_contest_performance(self, contest_id):
         """コンテストのパフォーマンスを取得する"""
         url = f"https://raw.githubusercontent.com/key-moon/ac-predictor-data/refs/heads/master/results/{contest_id}.json"
-        if True:
+        try:
             response = requests.get(url)
             response.raise_for_status()
             data = response.json()
@@ -217,14 +265,16 @@ class Contest_result(commands.Cog):
                 performance_data[item['UserScreenName']] = (item['Performance'], item['OldRating'], item['NewRating'])
 
             return performance_data
+        except requests.exceptions.RequestException as e:
+            print(f"パフォーマンスデータの取得に失敗しました ({contest_id}): {e}")
+            return {}
 
     async def get_atcoder_results(self, contest_id):
         """コンテスト結果を取得する"""
-        if True:
+        try:
             session = self.login()
             if not session:
                 raise ValueError("AtCoder へのログインに失敗しました。")
-
 
             url = f'https://atcoder.jp/contests/{contest_id}/standings/json'
             response = session.get(url)
@@ -251,7 +301,7 @@ class Contest_result(commands.Cog):
                             performance, old_rating, new_rating = None, None, None
 
                         if performance is None:
-                            performance = 0
+                            performance = "-" # パフォーマンスが取得できない場合は "-" を設定
                         elif performance <= 400 and is_rated:
                             true_performance = round(400 / (math.exp((400 - performance) / 400)))
                             performance = true_performance
@@ -292,6 +342,9 @@ class Contest_result(commands.Cog):
                         print(f"行の処理中にエラーが発生しました: {e}, row: {row}")
                         continue # エラーが発生した場合は次の行に進む
             return results
+        except Exception as e:
+            print(f"AtCoder results の取得に失敗しました ({contest_id}): {e}")
+            return None
         
     async def generate_contest_result_image(self, contest_id='abc001'):
         """コンテスト結果の画像を生成する"""
@@ -317,8 +370,12 @@ class Contest_result(commands.Cog):
                 f'&portrait=false&scale=2&size=B5&fitw=true' \
                 f'&horizontal_alignment=CENTER&vertical_alignment=CENTER' \
                 f'&right_margin=0.00&left_margin=0.00&bottom_margin=0.00&top_margin=0.00'
-        response = requests.get(pdf_url) 
-        response.raise_for_status()
+        try:
+            response = requests.get(pdf_url) 
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"PDFダウンロードに失敗しました ({contest_id}): {e}")
+            return None
 
         # 保存先フォルダのパス
         output_dir = "pdf_and_png"  # Atcotify_v2 フォルダの中に作成する場合
@@ -336,11 +393,12 @@ class Contest_result(commands.Cog):
             print("変換中…")
             images = convert_from_path(pdf_path)
             print("変換完了")
-            png_path = f'{contest_id}.png'
+            png_path = os.path.join(output_dir, f'{contest_id}.png') # pdf_and_pngフォルダの中に保存
             images[0].save(png_path, 'PNG')
 
         except (PDFInfoNotInstalledError, PDFPageCountError, PDFSyntaxError) as e:
             print(f"PDF変換エラー: {e}")
+            return None
         
         # 画像の切り抜き
         try:
@@ -358,9 +416,40 @@ class Contest_result(commands.Cog):
             return None
 
 
+    async def send_contest_result(self, contest, guild_id):
+        """コンテスト結果を送信する"""
+        contest_id = contest['url'].split('/')[-1]
+        image_path = await self.generate_contest_result_image(contest_id)
+        if image_path:
+            try:
+                channel_id = self.results_config.get(str(guild_id))
+                if channel_id:
+                    channel = self.bot.get_channel(int(channel_id))
+                    if channel:
+                        with open(image_path, 'rb') as f:
+                            image_file = discord.File(f, filename=f"{contest_id}.png")
+                            embed = discord.Embed(title=f"{contest['name']} コンテスト結果", color=discord.Color.orange()) # オレンジ色
+                            embed.set_image(url=f"attachment://{contest_id}.png")
+                            await channel.send(embed=embed, file=image_file)
+                            print(f"{contest['name']} のコンテスト結果を送信しました。")
+                            return True
+                    else:
+                        print(f"結果送信チャンネルが見つかりません: {channel_id}")
+                        return False
+                else:
+                    print(f"サーバー {guild_id} の結果送信チャンネルが設定されていません。")
+                    return False
+            except Exception as e:
+                print(f"コンテスト結果送信中にエラーが発生しました: {e}")
+                return False
+        else:
+            print(f"{contest['name']} のコンテスト結果画像の生成に失敗しました。")
+            return False
+
+
     @app_commands.command(name="contest_result", description="コンテスト結果を表示します")
     @app_commands.describe(contest_id="コンテストID (例: abc001)")
-    async def contest_result(self, interaction: discord.Interaction, contest_id: str):
+    async def contest_result_command(self, interaction: discord.Interaction, contest_id: str):
         await interaction.response.defer()
 
         image_path = await self.generate_contest_result_image(contest_id)
@@ -373,6 +462,71 @@ class Contest_result(commands.Cog):
         else:
             embed = discord.Embed(title="エラー", description="対象のデータが見つかりませんでした。", color=discord.Color.red()) # 赤色
             await interaction.followup.send(embed=embed)
+
+    @app_commands.command(
+        name="set_result_channel",
+        description="コンテスト結果を送信するチャンネルを設定",
+    )
+    async def set_result_channel(self, interaction: discord.Interaction):
+        """リマインダー送信チャンネル設定コマンド"""
+        guild_id = str(interaction.guild_id)
+        view = ResultChannelSelectView(self, guild_id)  # ChannelSelectView を使用
+        await interaction.response.send_message(
+            "コンテスト結果送信チャンネルを選択してください", view=view, ephemeral=False
+        )
+
+    @tasks.loop(minutes=1)
+    async def check_contest_end(self):
+        """コンテスト終了時刻をチェックし、結果を自動送信する"""
+        now = datetime.datetime.now()
+        updated_contests = []
+        for contest in self.contests:
+            end_time = datetime.datetime.strptime(contest["end_time"], "%Y-%m-%d %H:%M:%S")
+            if end_time <= now and not contest.get("result_sent", False):
+                guild_ids = self.results_config.keys()
+                sent_to_any_guild = False
+                for guild_id in guild_ids:
+                    if await self.send_contest_result(contest, guild_id):
+                        sent_to_any_guild = True
+                if sent_to_any_guild:
+                    contest["result_sent"] = True
+                    print(f"{contest['name']} のコンテスト結果の自動送信処理完了。")
+                else:
+                    print(f"{contest['name']} のコンテスト結果の自動送信に失敗。")
+            updated_contests.append(contest)
+        if updated_contests != self.contests:
+            self.contests = updated_contests
+            self.save_contests(self.contests)
+
+    @check_contest_end.before_loop
+    async def before_check_contest_end(self):
+        await self.bot.wait_until_ready()
+
+
+class ResultChannelSelectView(discord.ui.View):  # ChannelSelect 用の View を作成
+    def __init__(self, cog: Contest_result, guild_id: str):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.results_config = self.cog.results_config
+
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="チャンネルを選択してください",
+        custom_id="result_channel_select"
+    )
+    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        channel_id = select.values[0].id
+        self.results_config[self.guild_id] = str(channel_id)
+        self.cog.save_results_config(self.results_config)
+        channel_mention = f"<#{channel_id}>"
+        embed = discord.Embed(
+            title="コンテスト結果送信チャンネル設定完了！",
+            description=f"コンテスト結果送信チャンネルを {channel_mention} に設定しました！",
+            color=discord.Color.green(),
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=False)
 
 
 async def setup(bot: commands.Bot):

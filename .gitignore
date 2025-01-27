@@ -11,6 +11,7 @@ nohup.out
 /cogs/__pycache__/
 contests.yaml
 reminders.yaml
+results_config.yaml
 
 # python generated files
 __pycache__/
