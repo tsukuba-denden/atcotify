@@ -8,7 +8,6 @@ from pdf2image.exceptions import (
 )
 from pdf2image import convert_from_path
 import os
-os.environ['LD_LIBRARY_PATH'] = '/home/yuubinnkyoku/miniconda3/lib' + ':' + os.environ.get('LD_LIBRARY_PATH', '')
 import requests
 import urllib.parse
 import re
@@ -335,7 +334,7 @@ class Contest_result(commands.Cog):
         # PDF を PNG に変換
         try:
             print("変換中…")
-            images = convert_from_path(pdf_path, poppler_path='/home/yuubinnkyoku/miniconda3/pkgs/poppler-24.04.0-hb6cd0d7_0/bin')
+            images = convert_from_path(pdf_path)
             print("変換完了")
             png_path = f'{contest_id}.png'
             images[0].save(png_path, 'PNG')
