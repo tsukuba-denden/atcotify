@@ -18,6 +18,7 @@ import time
 # TODO: Android/iOSクライアント
 # TODO: コンテスト1時間前にスレッドを作る機能
 # TODO: リアクションで参加者ロール付与
+# TODO: sentのやつもcontests.yamlに保存
 
 config = Config()
 
