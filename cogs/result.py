@@ -509,7 +509,7 @@ class Contest_result(commands.Cog):
                         with open(image_path, "rb") as f:
                             image_file = discord.File(f, filename=f"{contest_id}.png")
                             embed = discord.Embed(
-                                title=f"{contest['name']} コンテスト結果　　　　　　　　　　　　　　　　　　　　　　　　　　",
+                                title=f"{contest['name']} コンテスト結果",
                                 color=discord.Color.orange(),
                             )  # オレンジ色
                             embed.set_image(url=f"attachment://{contest_id}.png")
