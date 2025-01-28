@@ -278,11 +278,16 @@ class Contest_result(commands.Cog):
             data = {
                 "continue": "https://atcoder.jp:443/home"
             }  # data に continue を設定
-            res = session.post(
-                login_url, params=params, data=data, headers=headers
-            )  # params, data, headers を設定
-            res.raise_for_status()  # HTTPエラーをチェック
+            res = session.post(login_url, params=params, data=data, headers=headers) # params, data, headers を設定
+            res.raise_for_status() # HTTPエラーをチェック
             return session
+        except requests.exceptions.HTTPError as e: # HTTPError をキャッチ
+            print(f"AtCoderログイン中にHTTPエラーが発生しました: {e}")
+            if e.response is not None:
+                print(f"レスポンスステータスコード: {e.response.status_code}")
+                print(f"レスポンスヘッダー: {e.response.headers}")
+                print(f"レスポンス内容: {e.response.content.decode('utf-8', errors='ignore')}") # レスポンス内容を出力 (decodeとerrors='ignore'を追加)
+            return None
         except Exception as e:
             print(f"AtCoderログイン中にエラーが発生しました: {e}")
             return None
@@ -419,9 +424,6 @@ class Contest_result(commands.Cog):
     async def generate_contest_result_image(self, contest_id="abc001"):
         """コンテスト結果の画像を生成する"""
 
-        import os
-        print("PATH 環境変数:", os.environ['PATH'])
-
         results = await self.get_atcoder_results(contest_id)
         if not results:
             print("なんかバグって数値取得できなかったわ")
@@ -466,7 +468,9 @@ class Contest_result(commands.Cog):
         # PDF を PNG に変換
         try:
             print("変換中…")
-            images = convert_from_path(pdf_path)
+            images = convert_from_path(
+                pdf_path, poppler_path="C:/Program Files/poppler-24.08.0/Library/bin"
+            )  # popplerのパスを指定
             print("変換完了")
             png_path = os.path.join(
                 output_dir, f"{contest_id}.png"
@@ -505,7 +509,7 @@ class Contest_result(commands.Cog):
                         with open(image_path, "rb") as f:
                             image_file = discord.File(f, filename=f"{contest_id}.png")
                             embed = discord.Embed(
-                                title=f"{contest['name']} コンテスト結果",
+                                title=f"{contest['name']} コンテスト結果　　　　　　　　　　　　　　　　　　　　　　　　　　",
                                 color=discord.Color.orange(),
                             )  # オレンジ色
                             embed.set_image(url=f"attachment://{contest_id}.png")
@@ -535,36 +539,23 @@ class Contest_result(commands.Cog):
         self, interaction: discord.Interaction, contest_id: str
     ):
         await interaction.response.defer()  # defer を先に呼び出す
-        await asyncio.sleep(2)  # defer 後に少し待機 # sleep時間を1秒から2秒に延長
+        await asyncio.sleep(2) # defer 後に少し待機 # sleep時間を1秒から2秒に延長
 
         image_path = await self.generate_contest_result_image(contest_id)
         if image_path:
             try:
                 with open(image_path, "rb") as f:
-                    image_file = discord.File(f)
-                    embed = discord.Embed(
-                        title=f"{contest_id} のコンテスト結果",
-                        color=discord.Color.orange(),
-                    )  # オレンジ色
-                embed.set_image(url=f"attachment://{image_path}")
-                await interaction.followup.send(
-                    embed=embed, file=image_file
-                )  # followup.send を使う
+                    image_file = discord.File(f, filename=f"{contest_id}.png") # ファイル名を指定
+                    embed = discord.Embed(title=f"{contest_id} のコンテスト結果", color=discord.Color.orange()) # オレンジ色
+                embed.set_image(url=f"attachment://{contest_id}.png") # ファイル名をURLに指定
+                await interaction.followup.send(embed=embed, file=image_file) # followup.send を使う
             except Exception as e:
                 print(f"コンテスト結果送信中にエラーが発生しました: {e}")
-                traceback.print_exc()  # エラー詳細ログを追加
-                embed = discord.Embed(
-                    title="エラー",
-                    description="コンテスト結果の送信に失敗しました。",
-                    color=discord.Color.red(),
-                )  # 赤色
+                traceback.print_exc() # エラー詳細ログを追加
+                embed = discord.Embed(title="エラー", description="コンテスト結果の送信に失敗しました。", color=discord.Color.red()) # 赤色
                 await interaction.followup.send(embed=embed)
         else:
-            embed = discord.Embed(
-                title="エラー",
-                description="対象のデータが見つかりませんでした。",
-                color=discord.Color.red(),
-            )  # 赤色
+            embed = discord.Embed(title="エラー", description="対象のデータが見つかりませんでした。", color=discord.Color.red()) # 赤色
             await interaction.followup.send(embed=embed)
 
     @app_commands.command(
