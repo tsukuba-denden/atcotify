@@ -508,14 +508,9 @@ class Contest_result(commands.Cog):
                     if channel:
                         with open(image_path, "rb") as f:
                             image_file = discord.File(f, filename=f"{contest_id}.png")
-                            embed = discord.Embed(
-                                title=f"{contest['name']} コンテスト結果",
-                                color=discord.Color.orange(),
-                            )  # オレンジ色
-                            embed.set_image(url=f"attachment://{contest_id}.png")
-                            await channel.send(embed=embed, file=image_file)
-                            print(f"{contest['name']} のコンテスト結果を送信しました。")
-                            return True
+                        await channel.send(file=image_file) # 画像のみ送信
+                        print(f"{contest['name']} のコンテスト結果を送信しました。")
+                        return True
                     else:
                         print(f"結果送信チャンネルが見つかりません: {channel_id}")
                         return False
@@ -546,12 +541,12 @@ class Contest_result(commands.Cog):
             try:
                 with open(image_path, "rb") as f:
                     image_file = discord.File(f, filename=f"{contest_id}.png") # ファイル名を指定
-                    embed = discord.Embed(title=f"{contest_id} のコンテスト結果", color=discord.Color.orange()) # オレンジ色
-                embed.set_image(url=f"attachment://{contest_id}.png") # ファイル名をURLに指定
-                await interaction.followup.send(embed=embed, file=image_file) # followup.send を使う
+                await interaction.followup.send(file=image_file) # 画像のみ送信
+                embed = discord.Embed(title=f"{contest_id} のコンテスト結果", color=discord.Color.orange()) # タイトルのみのEmbed
+                await interaction.followup.send(embed=embed) # タイトルEmbedを送信
             except Exception as e:
                 print(f"コンテスト結果送信中にエラーが発生しました: {e}")
-                traceback.print_exc() # エラー詳細ログを追加
+                traceback.print_exc()
                 embed = discord.Embed(title="エラー", description="コンテスト結果の送信に失敗しました。", color=discord.Color.red()) # 赤色
                 await interaction.followup.send(embed=embed)
         else:
