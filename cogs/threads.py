@@ -12,7 +12,6 @@ CONTESTS_FILE = "asset/contests.yaml"
 THREADS_FILE = "asset/threads.yaml"
 CONTEST_TYPES = ["ABC", "ARC", "AGC", "AHC"]
 
-# TODO: スレッドがある場合はそこにリマインドを送信
 
 class Threads(commands.Cog):
     def __init__(self, bot):
