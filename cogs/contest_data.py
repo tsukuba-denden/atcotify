@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import os
 import traceback
+import random
 
 import aiohttp
 import yaml
@@ -12,6 +13,14 @@ from env.config import Config
 CONTESTS_FILE = "asset/contests.yaml"
 ATCODER_CONTESTS_URL = "https://atcoder.jp/contests/"
 
+# 複数の User-Agent をリストで定義
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:96.0) Gecko/20100101 Firefox/96.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 Safari/537.36 Edg/99.0.1150.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36",
+]
 
 class ContestData(commands.Cog):
     def __init__(self, bot):
@@ -41,7 +50,7 @@ class ContestData(commands.Cog):
     async def fetch_contests_from_web(self) -> list[dict]:
         """AtCoderのウェブサイトからコンテスト情報をスクレイピングする"""
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": random.choice(USER_AGENTS)  # ランダムにUser-Agentを選択
         }
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(ATCODER_CONTESTS_URL, timeout=10) as response:

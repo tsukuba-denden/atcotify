@@ -9,9 +9,10 @@ from discord.ext import commands, tasks
 from discord.ui import Button, Select, View, ChannelSelect
 from .contest_data import ContestData  # ContestData Cog をインポート
 
-CONTESTS_FILE = "asset/contests.yaml"
+
 THREADS_FILE = "asset/threads.yaml"
 CONTEST_TYPES = ["ABC", "ARC", "AGC", "AHC"]
+
 
 class Threads(commands.Cog):
     def __init__(self, bot):
@@ -40,9 +41,13 @@ class Threads(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def check_contests_and_create_threads(self):
-        # ... (check_contests_and_create_threads - 変更なし) ...
+        """コンテストをチェックし、スレッドを作成する"""
         now = datetime.datetime.now()
-        contests = self.load_contests()
+        contest_data_cog = self.bot.get_cog("ContestData")  # ContestData Cogを取得
+        if not contest_data_cog:
+            print("Error: ContestData cog not found!")
+            return
+        contests = contest_data_cog.contests  # ContestData Cogからコンテスト情報を取得
         if not contests:
             return
 
@@ -89,7 +94,9 @@ class Threads(commands.Cog):
 
                         # スレッド作成済みフラグを立てる
                         contest["threads_created"] = True
-                        self.save_contests(contests)
+                        contest_data_cog.save_contests(
+                            contests
+                        )  # ContestData Cog の save_contests を呼び出す
 
                     except discord.errors.Forbidden:
                         print(
@@ -103,8 +110,7 @@ class Threads(commands.Cog):
         await self.bot.wait_until_ready()
 
     @app_commands.command(
-        name="thread---set_channel",
-        description="スレッドを作成するチャンネルを設定",
+        name="thread---set_channel", description="スレッドを作成するチャンネルを設定"
     )
     async def set_thread_channel(self, interaction: discord.Interaction):
         """スレッド作成チャンネル設定コマンド"""
@@ -122,7 +128,8 @@ class Threads(commands.Cog):
         )
 
     @app_commands.command(
-        name="thread---set_contest_type", description="コンテストタイプごとのスレッド作成をON/OFF"
+        name="thread---set_contest_type",
+        description="コンテストタイプごとのスレッド作成をON/OFF",
     )
     async def set_thread_type(self, interaction: discord.Interaction):
         """コンテストタイプごとのスレッド作成ON/OFF設定コマンド"""
@@ -131,7 +138,7 @@ class Threads(commands.Cog):
             "channel_id"
         ):
             await interaction.response.send_message(
-                "先に `/set_thread_channel` コマンドでチャンネルを設定してください。",
+                "先に `/thread---set_channel` コマンドでチャンネルを設定してください。",
                 ephemeral=True,
             )
             return
@@ -143,7 +150,6 @@ class Threads(commands.Cog):
 
 
 class ChannelSelectView(View):
-    # ... (ChannelSelectView - 変更なし) ...
     def __init__(self, cog: Threads, guild_id: str):
         super().__init__(timeout=None)
         self.cog = cog
@@ -162,11 +168,13 @@ class ChannelSelectView(View):
     async def channel_select_callback(self, interaction: discord.Interaction):
         """チャンネルが選択されたときのコールバック"""
         channel_id = interaction.data["values"][0]  # 選択されたチャンネルIDを取得
-        self.cog.threads_config[self.guild_id]["channel_id"] = str(channel_id)
+        self.cog.threads_config[self.guild_id]["channel_id"] = str(
+            channel_id
+        )  # channel_id のみ更新
         self.cog.save_threads_config()
         channel_mention = f"<#{channel_id}>"  # チャンネルメンションを作成
-        await interaction.response.edit_message(  # /set_thread_type を実行するように促すメッセージに変更
-            content=f"スレッド作成チャンネルを {channel_mention} に設定しました！\n`/set_thread_type` コマンドで、コンテストタイプごとのスレッド作成設定を行ってください。",
+        await interaction.response.edit_message(
+            content=f"スレッド作成チャンネルを {channel_mention} に設定しました！\n`/thread---set_contest_type` コマンドで、コンテストタイプごとのスレッド作成設定を行ってください。",
             view=None,
         )
 
