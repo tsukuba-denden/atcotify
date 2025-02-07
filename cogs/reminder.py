@@ -18,7 +18,9 @@ import time
 # TODO: リアクションで参加者ロール付与
 # TODO: sentのやつもcontests.yamlに保存
 # TODO: Xmas、Otherのコンテストタイプに対応
+# TODO: JOIに個別対応
 # TODO: 
+# TODO:
 
 config = Config()
 
