@@ -20,7 +20,7 @@ from PIL import Image
 import yaml
 from env.config import Config
 import datetime
-import asyncio  # asyncio をインポート
+import asyncio
 import traceback
 
 config = Config()
