@@ -12,6 +12,7 @@ nohup.out
 contests.yaml
 reminders.yaml
 results_config.yaml
+threads.yaml
 
 # python generated files
 __pycache__/
