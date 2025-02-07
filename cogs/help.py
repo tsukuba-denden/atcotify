@@ -11,46 +11,47 @@ class Help(commands.Cog):
     async def help_command(self, interaction: discord.Interaction):
         embed = discord.Embed(title="コマンド一覧", color=discord.Color.blue())
 
-        embed.add_field(
-            name="`/contest_result`",
-            value="コンテストの結果画像を送信します",
-            inline=False,
-        )
+        
         embed.add_field(
             name="`/help`",
             value="今まさにあなたが使ったヘルプコマンドです",
             inline=False,
         )
         embed.add_field(
-            name="`/set_reminder`",
+            name="`/reminder --- set`",
             value="AtCoderのコンテストリマインダーを設定します。コンテストの種類、通知時間を選択できます。",
             inline=False,
         )
         embed.add_field(
-            name="`/set_reminder_channel`",
+            name="`/reminder --- set_channel`",
             value="リマインダーを送信するチャンネルを設定します。",
             inline=False,
         )
         embed.add_field(
-            name="`/set_result_channel`",
+            name="`/reminder --- show`",
+            value="現在設定されているリマインダーを表示します。",
+            inline=False,
+        )
+        embed.add_field(
+            name="`/result --- contest_result`",
+            value="コンテストの結果画像を送信します",
+            inline=False,
+        )
+        embed.add_field(
+            name="`/result --- set_channel`",
             value="コンテスト結果を自動送信するチャンネルを設定します",
             inline=False,
         )
         embed.add_field(
-            name="`/set_thread_channel`",
-            value="コンテスト1時間前にスレッドを自動作成するチャンネルを設定します",   
+            name="`/thread --- set_channel`",
+            value="コンテスト1時間前にスレッドを自動作成するチャンネルを設定します",
             inline=False,
         )
         embed.add_field(
-            name="`/set_thread_type`",
+            name="`/thread --- set_contest_type`",
             value="コンテストタイプごとにスレッド作成のON/OFFを設定します。",
             inline=False,
-        )
-        embed.add_field(
-            name="`/show_reminder`",
-            value="現在設定されているリマインダーを表示します。",
-            inline=False,
-        )
+        )   
         embed.add_field(
             name="`/tsukuba_rank`",
             value="[AJL](https://info.atcoder.jp/utilize/school/ajl)における筑附の順位やスコア・一つ上の学校との比較を表示します",

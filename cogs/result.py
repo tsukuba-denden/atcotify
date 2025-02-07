@@ -527,7 +527,7 @@ class Contest_result(commands.Cog):
             return False
 
     @app_commands.command(
-        name="result---contest_result", description="コンテスト結果を表示します"
+        name="result --- contest_result", description="コンテスト結果を表示します"
     )
     @app_commands.describe(contest_id="コンテストID (例: abc001)")
     async def contest_result_command(
@@ -554,7 +554,7 @@ class Contest_result(commands.Cog):
             await interaction.followup.send(embed=embed)
 
     @app_commands.command(
-        name="result---set_channel",
+        name="result --- set_channel",
         description="コンテスト結果を送信するチャンネルを設定",
     )
     async def set_result_channel(self, interaction: discord.Interaction):
