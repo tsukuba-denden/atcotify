@@ -103,7 +103,7 @@ class Threads(commands.Cog):
         await self.bot.wait_until_ready()
 
     @app_commands.command(
-        name="thread --- set_channel",
+        name="thread---set_channel",
         description="スレッドを作成するチャンネルを設定",
     )
     async def set_thread_channel(self, interaction: discord.Interaction):
@@ -122,7 +122,7 @@ class Threads(commands.Cog):
         )
 
     @app_commands.command(
-        name="thread --- set_contest_type", description="コンテストタイプごとのスレッド作成をON/OFF"
+        name="thread---set_contest_type", description="コンテストタイプごとのスレッド作成をON/OFF"
     )
     async def set_thread_type(self, interaction: discord.Interaction):
         """コンテストタイプごとのスレッド作成ON/OFF設定コマンド"""

@@ -92,85 +92,6 @@ class Reminder(commands.Cog):
                 sort_keys=False,
             )
 
-    async def fetch_contests_from_web(self) -> List[Dict]:
-        """AtCoderのウェブサイトからコンテスト情報をスクレイピングする"""
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(ATCODER_CONTESTS_URL) as response:
-                response.raise_for_status()
-                html = await response.text()
-
-        soup = BeautifulSoup(html, "html.parser")
-        contests = []
-
-        # 予定されたコンテストのテーブルを抽出
-        upcoming_contests_table = soup.find(id="contest-table-upcoming")
-        if upcoming_contests_table:
-            table = upcoming_contests_table.find("table")
-            if table:
-                for row in table.find("tbody").find_all("tr"):
-                    cells = row.find_all("td")
-                    if len(cells) == 4:
-                        start_time_str = cells[0].find("time").text
-                        # Remove timezone offset before parsing
-                        start_time_str = start_time_str.split('+')[0]
-                        start_time = datetime.datetime.strptime(
-                            start_time_str, "%Y-%m-%d %H:%M:%S"
-                        )
-                        contest_name = cells[1].find("a").text
-                        duration_str = cells[2].text
-                        rated_range = cells[3].text.strip()
-                        contest_url = cells[1].find("a")["href"]
-                        contest_type = self.extract_contest_type(cells[1])
-
-                        if contest_type:
-                            end_time = start_time + self.parse_duration(duration_str)
-
-                            contests.append(
-                                {
-                                    "name": contest_name,
-                                    "start_time": start_time.strftime(
-                                        "%Y-%m-%d %H:%M:%S"
-                                    ),
-                                    "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S"),
-                                    "duration": duration_str,
-                                    "type": contest_type,
-                                    "url": f"https://atcoder.jp{contest_url}",
-                                    "rated_range": rated_range,
-                                }
-                            )
-
-        return contests
-
-    def extract_contest_type(self, cell) -> str or None:
-        """コンテストタイプを抽出する"""
-        contest_type_span = cell.find("span", {"aria-hidden": "true"})
-        if not contest_type_span:
-            return None
-        title = contest_type_span.get("title", "")
-        if title == "Algorithm":
-            if "Beginner" in cell.text:
-                return "ABC"
-            elif "Regular" in cell.text:
-                return "ARC"
-            elif "Grand" in cell.text:
-                return "AGC"
-        elif title == "Heuristic":
-            return "AHC"
-        return None
-
-    def parse_duration(self, duration_str: str) -> datetime.timedelta:
-        """コンテスト時間文字列をtimedeltaオブジェクトに変換する"""
-        hours, minutes = map(int, duration_str.split(":"))
-        return datetime.timedelta(hours=hours, minutes=minutes)
-
-    @tasks.loop(hours=24)
-    async def fetch_contests(self):
-        """定期的にコンテスト情報を取得・更新する"""
-        await self.run_fetch_contests()
-
     def get_a_problem_url(self, contest_url: str) -> str:
         """A問題のURLを生成する"""
         return f"{contest_url}/tasks/{contest_url.split('/')[-1]}_a"
@@ -309,7 +230,7 @@ class Reminder(commands.Cog):
     async def before_check_reminders(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="reminder --- set", description="リマインダー設定")
+    @app_commands.command(name="reminder---set", description="リマインダー設定")
     async def set_reminder(self, interaction: discord.Interaction):
         """リマインダー設定コマンド"""
         guild_id = str(interaction.guild_id)
@@ -327,7 +248,7 @@ class Reminder(commands.Cog):
         )
     
     @app_commands.command(
-        name="reminder --- set_channel",
+        name="reminder---set_channel",
         description="リマインダーを送信するチャンネルを設定",
     )
     async def set_reminder_channel(self, interaction: discord.Interaction):
@@ -339,7 +260,7 @@ class Reminder(commands.Cog):
         )
 
     @app_commands.command(
-        name="reminder --- show", description="現在設定されているリマインダーを表示"
+        name="reminder---show", description="現在設定されているリマインダーを表示"
     )
     async def show_reminder(self, interaction: discord.Interaction):
         """Displays the currently configured reminders for the server."""
