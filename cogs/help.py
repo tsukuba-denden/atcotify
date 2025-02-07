@@ -18,37 +18,37 @@ class Help(commands.Cog):
             inline=False,
         )
         embed.add_field(
-            name="`/reminder --- set`",
+            name="`/reminder---set`",
             value="AtCoderのコンテストリマインダーを設定します。コンテストの種類、通知時間を選択できます。",
             inline=False,
         )
         embed.add_field(
-            name="`/reminder --- set_channel`",
+            name="`/reminder---set_channel`",
             value="リマインダーを送信するチャンネルを設定します。",
             inline=False,
         )
         embed.add_field(
-            name="`/reminder --- show`",
+            name="`/reminder---show`",
             value="現在設定されているリマインダーを表示します。",
             inline=False,
         )
         embed.add_field(
-            name="`/result --- contest_result`",
+            name="`/result---contest_result`",
             value="コンテストの結果画像を送信します",
             inline=False,
         )
         embed.add_field(
-            name="`/result --- set_channel`",
+            name="`/result---set_channel`",
             value="コンテスト結果を自動送信するチャンネルを設定します",
             inline=False,
         )
         embed.add_field(
-            name="`/thread --- set_channel`",
+            name="`/thread---set_channel`",
             value="コンテスト1時間前にスレッドを自動作成するチャンネルを設定します",
             inline=False,
         )
         embed.add_field(
-            name="`/thread --- set_contest_type`",
+            name="`/thread---set_contest_type`",
             value="コンテストタイプごとにスレッド作成のON/OFFを設定します。",
             inline=False,
         )   
