@@ -52,7 +52,7 @@ class Help(commands.Cog):
             inline=False,
         )
         embed.add_field(
-            name="`/`",
+            name="`/tsukuba_rank`",
             value="[AJL](https://info.atcoder.jp/utilize/school/ajl)における筑附の順位やスコア・一つ上の学校との比較を表示します",
             inline=False,
         )
