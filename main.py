@@ -12,6 +12,7 @@ INITIAL_EXTENSIONS = [
     "cogs.reminder",
     "cogs.result",
     "cogs.threads",
+    "cogs.contest_data",
 ]
 
 config = Config()

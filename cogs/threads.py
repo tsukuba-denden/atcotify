@@ -7,6 +7,7 @@ import yaml
 from discord import app_commands
 from discord.ext import commands, tasks
 from discord.ui import Button, Select, View, ChannelSelect
+from .contest_data import ContestData  # ContestData Cog をインポート
 
 CONTESTS_FILE = "asset/contests.yaml"
 THREADS_FILE = "asset/threads.yaml"
@@ -19,7 +20,7 @@ class Threads(commands.Cog):
         self.threads_config = self.load_threads_config()
 
     def load_threads_config(self):
-        # ... (load_threads_config - 変更なし) ...
+        """スレッド設定をYAMLファイルから読み込む"""
         if os.path.exists(THREADS_FILE):
             with open(THREADS_FILE, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
@@ -27,29 +28,10 @@ class Threads(commands.Cog):
         return {}
 
     def save_threads_config(self):
-        # ... (save_threads_config - 変更なし) ...
+        """スレッド設定をYAMLファイルに保存する"""
         with open(THREADS_FILE, "w", encoding="utf-8") as f:
             yaml.dump(
                 self.threads_config,
-                f,
-                allow_unicode=True,
-                default_flow_style=False,
-                sort_keys=False,
-            )
-
-    def load_contests(self) -> list[dict]:
-        # ... (load_contests - 変更なし) ...
-        if os.path.exists(CONTESTS_FILE):
-            with open(CONTESTS_FILE, "r", encoding="utf-8") as f:
-                contests = yaml.safe_load(f)
-                return contests if contests is not None else []
-        return []
-
-    def save_contests(self, contests: list[dict]):
-        # ... (save_contests - 変更なし) ...
-        with open(CONTESTS_FILE, "w", encoding="utf-8") as f:
-            yaml.dump(
-                contests,
                 f,
                 allow_unicode=True,
                 default_flow_style=False,

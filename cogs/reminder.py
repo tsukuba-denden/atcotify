@@ -11,6 +11,7 @@ from discord.ext import commands, tasks
 from discord.ui import Button, Select, View, ChannelSelect
 from env.config import Config
 import time
+from .contest_data import ContestData  # ContestData Cogをインポート
 
 # TODO: 全てのメッセージをembedに
 # TODO: ABCをスケジュール(Discordの機能)化←いる？
@@ -20,7 +21,7 @@ import time
 # TODO: Xmas、Otherのコンテストタイプに対応
 # TODO: JOIに個別対応
 # TODO: スレッドがある場合はそこにリマインドを送信
-# TODO: バチャ立て対応
+# TODO: バチャ立て対応(TCA版AtcoderNotify参考)
 # TODO: コンテスト情報取得の部分は独自Cog化
 
 config = Config()
@@ -51,9 +52,9 @@ TIME_MAPPING = {
 class Reminder(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.contests = self.load_contests()
+        #self.contests = self.load_contests()
         self.reminders = self.load_reminders()
-        self.fetch_contests.start()  # Start the fetch_contests task
+        # self.fetch_contests.start()  # タスクは ContestData Cog で開始
         self.check_reminders.start() # Start the check_reminders task
 
     async def run_fetch_contests(self):
@@ -69,24 +70,6 @@ class Reminder(commands.Cog):
         except Exception as e:
             print(f"コンテスト情報の取得中にエラーが発生しました: {e}")
             traceback.print_exc()
-
-    def load_contests(self) -> List[Dict]:
-        """コンテスト情報をYAMLファイルから読み込む"""
-        if os.path.exists(CONTESTS_FILE):
-            with open(CONTESTS_FILE, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f)
-        return []
-
-    def save_contests(self, contests: List[Dict]):
-        """コンテスト情報をYAMLファイルに保存する"""
-        with open(CONTESTS_FILE, "w", encoding="utf-8") as f:
-            yaml.dump(
-                contests,
-                f,
-                allow_unicode=True,
-                default_flow_style=False,
-                sort_keys=False,
-            )
 
     def load_reminders(self) -> Dict:
         """リマインダー設定をYAMLファイルから読み込む"""
@@ -288,6 +271,13 @@ class Reminder(commands.Cog):
     async def check_reminders(self):
         """設定された時間に基づいてリマインダーを送信する"""
         now = datetime.datetime.now()
+        contest_data_cog = self.bot.get_cog("ContestData")  # ContestData Cogを取得
+        if not contest_data_cog:
+            print("Error: ContestData cog not found!")
+            return
+        contests = contest_data_cog.contests  # ContestData Cogからコンテスト情報を取得
+        if not contests:
+            return
         for guild_id, reminder_config in self.reminders.items():
             for contest in self.contests:
                 start_time = datetime.datetime.strptime(
