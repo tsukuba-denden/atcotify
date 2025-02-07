@@ -20,7 +20,8 @@ import time
 # TODO: Xmas、Otherのコンテストタイプに対応
 # TODO: JOIに個別対応
 # TODO: スレッドがある場合はそこにリマインドを送信
-# TODO: 
+# TODO: バチャ立て対応
+# TODO: コンテスト情報取得の部分は独自Cog化
 
 config = Config()
 
