@@ -15,9 +15,10 @@ import time
 # TODO: 全てのメッセージをembedに
 # TODO: ABCをスケジュール(Discordの機能)化←いる？
 # TODO: Android/iOSクライアント
-# TODO: コンテスト1時間前にスレッドを作る機能
 # TODO: リアクションで参加者ロール付与
 # TODO: sentのやつもcontests.yamlに保存
+# TODO: Xmas、Otherのコンテストタイプに対応
+# TODO: 
 
 config = Config()
 
