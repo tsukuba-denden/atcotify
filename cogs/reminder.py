@@ -315,7 +315,7 @@ class Reminder(commands.Cog):
     async def before_check_reminders(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="set_reminder", description="リマインダー設定")
+    @app_commands.command(name="reminder---set", description="リマインダー設定")
     async def set_reminder(self, interaction: discord.Interaction):
         """リマインダー設定コマンド"""
         guild_id = str(interaction.guild_id)
@@ -333,7 +333,7 @@ class Reminder(commands.Cog):
         )
     
     @app_commands.command(
-        name="set_reminder_channel",
+        name="reminder---set_channel",
         description="リマインダーを送信するチャンネルを設定",
     )
     async def set_reminder_channel(self, interaction: discord.Interaction):
@@ -345,7 +345,7 @@ class Reminder(commands.Cog):
         )
 
     @app_commands.command(
-        name="show_reminder", description="現在設定されているリマインダーを表示"
+        name="reminder---show", description="現在設定されているリマインダーを表示"
     )
     async def show_reminder(self, interaction: discord.Interaction):
         """Displays the currently configured reminders for the server."""
