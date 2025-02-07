@@ -10,6 +10,7 @@ from discord.ext import commands
 from env.config import Config
 
 # TODO: 15分ごとにスクレイピングして更新があれば送信するようにする(studentも)
+# TODO: 前回実行時と同じ場合に前々回順位が表示されない問題
 
 # 環境変数から設定を読み込む
 config = Config()
