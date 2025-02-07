@@ -19,8 +19,8 @@ import time
 # TODO: sentのやつもcontests.yamlに保存
 # TODO: Xmas、Otherのコンテストタイプに対応
 # TODO: JOIに個別対応
+# TODO: スレッドがある場合はそこにリマインドを送信
 # TODO: 
-# TODO:
 
 config = Config()
 
