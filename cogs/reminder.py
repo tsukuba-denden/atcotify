@@ -1,16 +1,19 @@
 import datetime
 import os
+import time
 import traceback
 from typing import Dict, List
+
 import aiohttp
 import discord
 import yaml
 from bs4 import BeautifulSoup
 from discord import app_commands
 from discord.ext import commands, tasks
-from discord.ui import Button, Select, View, ChannelSelect
+from discord.ui import Button, ChannelSelect, Select, View
+
 from env.config import Config
-import time
+
 from .contest_data import ContestData  # ContestData Cogをインポート
 
 # TODO: 全てのメッセージをembedに
@@ -49,13 +52,14 @@ TIME_MAPPING = {
     "1時間前": 60,
 }
 
+
 class Reminder(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        #self.contests = self.load_contests()
+        # self.contests = self.load_contests()
         self.reminders = self.load_reminders()
         # self.fetch_contests.start()  # タスクは ContestData Cog で開始
-        self.check_reminders.start() # Start the check_reminders task
+        self.check_reminders.start()  # Start the check_reminders task
 
     async def run_fetch_contests(self):
         """コンテスト情報を取得して保存する"""
@@ -200,7 +204,7 @@ class Reminder(commands.Cog):
         if not contests:
             return
         for guild_id, reminder_config in self.reminders.items():
-            for contest in self.contests:
+            for contest in contests:  # 変更: self.contests -> contests
                 start_time = datetime.datetime.strptime(
                     contest["start_time"], "%Y-%m-%d %H:%M:%S"
                 )
@@ -243,10 +247,10 @@ class Reminder(commands.Cog):
                 self.save_reminders(self.reminders)
 
         view = ReminderSettingsView(self, guild_id)
-        await interaction.response.send_message( # interaction.response.send_message に変更
+        await interaction.response.send_message(  # interaction.response.send_message に変更
             "リマインダー設定", view=view, ephemeral=False
         )
-    
+
     @app_commands.command(
         name="reminder---set_channel",
         description="リマインダーを送信するチャンネルを設定",
@@ -547,7 +551,7 @@ class ContestTypeSettingsView(View):
             )
             await interaction.response.edit_message(  # interaction.response.edit_message で編集
                 content=None,  # content を None にして Embed を送信
-                view=None,  # view を None にしてボタンなどを削除
+                view=None,  # view を None にしてボタンなどを削除  <- こちらのみ残す
                 embed=embed,  # Embed を設定
             )
             self.cog.save_reminders(self.cog.reminders)
