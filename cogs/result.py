@@ -1,27 +1,29 @@
 # cogs/result.py
+import asyncio
+import datetime
+import math
+import os
+import re
+import traceback
+import urllib.parse
+from time import sleep
+
 import discord
+import gspread
+import requests
+import yaml
 from discord import app_commands
 from discord.ext import commands, tasks
+from google.oauth2.service_account import Credentials
+from pdf2image import convert_from_path
 from pdf2image.exceptions import (
     PDFInfoNotInstalledError,
     PDFPageCountError,
     PDFSyntaxError,
 )
-from pdf2image import convert_from_path
-import os
-import requests
-import urllib.parse
-import re
-import math
-from time import sleep
-import gspread
-from google.oauth2.service_account import Credentials
 from PIL import Image
-import yaml
+
 from env.config import Config
-import datetime
-import asyncio
-import traceback
 
 config = Config()
 
@@ -41,6 +43,7 @@ class Contest_result(commands.Cog):
         self.results_config = self.load_results_config()
         self.contests = self.load_contests()
         self.check_contest_end.start()
+        self.retry_count = 0  # リトライカウントを初期化
 
     def load_results_config(self):
         """結果送信チャンネル設定をYAMLファイルから読み込む"""
@@ -278,15 +281,19 @@ class Contest_result(commands.Cog):
             data = {
                 "continue": "https://atcoder.jp:443/home"
             }  # data に continue を設定
-            res = session.post(login_url, params=params, data=data, headers=headers) # params, data, headers を設定
-            res.raise_for_status() # HTTPエラーをチェック
+            res = session.post(
+                login_url, params=params, data=data, headers=headers
+            )  # params, data, headers を設定
+            res.raise_for_status()  # HTTPエラーをチェック
             return session
-        except requests.exceptions.HTTPError as e: # HTTPError をキャッチ
+        except requests.exceptions.HTTPError as e:  # HTTPError をキャッチ
             print(f"AtCoderログイン中にHTTPエラーが発生しました: {e}")
             if e.response is not None:
                 print(f"レスポンスステータスコード: {e.response.status_code}")
                 print(f"レスポンスヘッダー: {e.response.headers}")
-                print(f"レスポンス内容: {e.response.content.decode('utf-8', errors='ignore')}") # レスポンス内容を出力 (decodeとerrors='ignore'を追加)
+                print(
+                    f"レスポンス内容: {e.response.content.decode('utf-8', errors='ignore')}"
+                )  # レスポンス内容を出力 (decodeとerrors='ignore'を追加)
             return None
         except Exception as e:
             print(f"AtCoderログイン中にエラーが発生しました: {e}")
@@ -508,8 +515,9 @@ class Contest_result(commands.Cog):
                     if channel:
                         with open(image_path, "rb") as f:
                             image_file = discord.File(f, filename=f"{contest_id}.png")
-                        await channel.send(file=image_file) # 画像のみ送信
+                        await channel.send(file=image_file)  # 画像のみ送信
                         print(f"{contest['name']} のコンテスト結果を送信しました。")
+                        self.retry_count = 0  # リトライカウントをリセット
                         return True
                     else:
                         print(f"結果送信チャンネルが見つかりません: {channel_id}")
@@ -534,23 +542,35 @@ class Contest_result(commands.Cog):
         self, interaction: discord.Interaction, contest_id: str
     ):
         await interaction.response.defer()  # defer を先に呼び出す
-        await asyncio.sleep(2) # defer 後に少し待機 # sleep時間を1秒から2秒に延長
+        await asyncio.sleep(2)  # defer 後に少し待機 # sleep時間を1秒から2秒に延長
 
         image_path = await self.generate_contest_result_image(contest_id)
         if image_path:
             try:
                 with open(image_path, "rb") as f:
-                    image_file = discord.File(f, filename=f"{contest_id}.png") # ファイル名を指定
-                await interaction.followup.send(file=image_file) # 画像のみ送信
-                embed = discord.Embed(title=f"{contest_id} のコンテスト結果", color=discord.Color.orange()) # タイトルのみのEmbed
-                await interaction.followup.send(embed=embed) # タイトルEmbedを送信
+                    image_file = discord.File(
+                        f, filename=f"{contest_id}.png"
+                    )  # ファイル名を指定
+                await interaction.followup.send(file=image_file)  # 画像のみ送信
+                embed = discord.Embed(
+                    title=f"{contest_id} のコンテスト結果", color=discord.Color.orange()
+                )  # タイトルのみのEmbed
+                await interaction.followup.send(embed=embed)  # タイトルEmbedを送信
             except Exception as e:
                 print(f"コンテスト結果送信中にエラーが発生しました: {e}")
                 traceback.print_exc()
-                embed = discord.Embed(title="エラー", description="コンテスト結果の送信に失敗しました。", color=discord.Color.red()) # 赤色
+                embed = discord.Embed(
+                    title="エラー",
+                    description="コンテスト結果の送信に失敗しました。",
+                    color=discord.Color.red(),
+                )  # 赤色
                 await interaction.followup.send(embed=embed)
         else:
-            embed = discord.Embed(title="エラー", description="対象のデータが見つかりませんでした。", color=discord.Color.red()) # 赤色
+            embed = discord.Embed(
+                title="エラー",
+                description="対象のデータが見つかりませんでした。",
+                color=discord.Color.red(),
+            )  # 赤色
             await interaction.followup.send(embed=embed)
 
     @app_commands.command(
@@ -585,6 +605,10 @@ class Contest_result(commands.Cog):
                     print(f"{contest['name']} のコンテスト結果の自動送信処理完了。")
                 else:
                     print(f"{contest['name']} のコンテスト結果の自動送信に失敗。")
+                    self.retry_count += 1  # リトライカウントを増加
+                    if self.retry_count >= 10:
+                        print("リトライ回数が10回に達しました。自動送信を中止します。")
+                        break  # リトライ回数が10回に達したらループを抜ける
             updated_contests.append(contest)
         if updated_contests != self.contests:
             self.contests = updated_contests
