@@ -82,8 +82,9 @@ class Threads(commands.Cog):
                     < start_time - datetime.timedelta(minutes=59)
                 ):
                     try:
+                        nameindex=contest["name"].index("(")
                         thread = await channel.create_thread(
-                            name=contest["name"],
+                            name=contest["type"]+contest["name"][-4:-1]+" "+contest["name"][:nameindex],
                             type=discord.ChannelType.public_thread,
                             auto_archive_duration=1440,
                         )
