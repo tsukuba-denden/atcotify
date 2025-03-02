@@ -1,12 +1,14 @@
-import yaml
 import os
 from io import StringIO
-import calculate_hash
+
 import discord
 import pandas as pd
 import requests
+import yaml
 from discord import app_commands
 from discord.ext import commands
+
+import calculate_hash
 from env.config import Config
 
 # TODO: 15分ごとにスクレイピングして更新があれば送信するようにする(studentも)
@@ -87,6 +89,9 @@ class Tsukuba_rank(commands.Cog):
             except FileNotFoundError:
                 previous_html_hash_school_h = None
 
+            embed_a = None
+            embed_h = None
+
             # コンテスト種別ごとに処理
             for contest_type in ["A", "H"]:
                 url = AJL_RANKING_BASE_URL.format(season_suffix, contest_type)
@@ -130,22 +135,17 @@ class Tsukuba_rank(commands.Cog):
                     # 順位とスコアの比較のための説明文生成
                     description = "# "
                     if current_html_hash != previous_hash or previous_rank is None:
-                        if (
-                            last_rank == current_rank
-                            and last_score == current_score
-                            and previous_rank is not None
-                        ):
-                            description += (
-                                f"{previous_rank}位→**||{current_rank}||位**\n"
-                            )
-                        elif previous_rank is None:
-                            description += f"**||{current_rank}||位**\n"
+                        if previous_rank is not None:
+                            description += f"{last_rank}位→**||{current_rank}||位**\n"
                         else:
+                            description += f"**||{current_rank}||位**\n"
+                    else:
+                        if previous_rank is not None:
                             description += (
                                 f"{previous_rank}位→**||{current_rank}||位**\n"
                             )
-                    else:
-                        description += f"**||{last_rank}||位**\n"
+                        else:
+                            description += f"**||{current_rank}||位**\n"
 
                     # 上の学校とのスコア差を計算
                     if tsukuba_rank > 0:
@@ -164,12 +164,14 @@ class Tsukuba_rank(commands.Cog):
 
                     # スコア変動
                     score_change = 0
-                    if previous_score is not None:
-                        if last_rank == current_rank and last_score == current_score:
-                            score_change = current_score - previous_score
-                        else:
+                    if previous_score is not None and last_score is not None:
+                        if current_html_hash != previous_hash:
                             score_change = current_score - last_score
+                        else:
+                            score_change = current_score - previous_score
                         description += f"\n# {current_score}点\n> 前回より**{score_change}点**増えました！"
+                    else:
+                        description += f"\n# {current_score}点"
 
                     # Embedを作成
                     embed = discord.Embed(
@@ -184,18 +186,10 @@ class Tsukuba_rank(commands.Cog):
                     else:
                         embed_h = embed
 
-                    # データ更新
-                    if (
-                        last_rank != current_rank
-                        or last_score != current_score
-                        or current_html_hash != previous_hash
-                    ):
-                        previous_data[contest_type]["previous_rank"] = previous_data[
-                            contest_type
-                        ]["last_rank"]
-                        previous_data[contest_type]["previous_score"] = previous_data[
-                            contest_type
-                        ]["last_score"]
+                    # HTMLに更新があった場合、順位・スコアの変更にかかわらず更新する
+                    if current_html_hash != previous_hash:
+                        previous_data[contest_type]["previous_rank"] = last_rank
+                        previous_data[contest_type]["previous_score"] = last_score
                         previous_data[contest_type]["last_rank"] = current_rank
                         previous_data[contest_type]["last_score"] = current_score
                         await self.save_tsukuba_rank(TSUKUBA_RANK_FILE, previous_data)
