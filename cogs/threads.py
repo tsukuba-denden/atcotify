@@ -82,12 +82,21 @@ class Threads(commands.Cog):
                     < start_time - datetime.timedelta(minutes=59)
                 ):
                     try:
-                        nameindex = contest["name"].index("(")
+                        # 括弧がない場合のエラー回避
+                        thread_name = contest["type"]
+                        if "(" in contest["name"]:
+                            nameindex = contest["name"].index("(")
+                            thread_name += contest["name"][-4:-1] + " " + contest["name"][:nameindex]
+                        else:
+                            # 括弧がない場合のフォールバック
+                            thread_name = f"{contest['type']} {contest['name']}"
+                        
+                        # スレッド名の長さを制限（Discordの制限は100文字）
+                        if len(thread_name) > 100:
+                            thread_name = thread_name[:97] + "..."
+                            
                         thread = await channel.create_thread(
-                            name=contest["type"]
-                            + contest["name"][-4:-1]
-                            + " "
-                            + contest["name"][:nameindex],
+                            name=thread_name,
                             type=discord.ChannelType.public_thread,
                             auto_archive_duration=1440,
                         )
@@ -106,6 +115,10 @@ class Threads(commands.Cog):
                         print(
                             f"スレッド作成: チャンネル {channel.name} (ID: {channel_id}) でスレッド作成権限がありません。"
                         )
+                    except ValueError as e:
+                        print(f"スレッド名の生成中にエラーが発生しました: {e}")
+                    except discord.errors.HTTPException as e:
+                        print(f"Discord APIエラー: {e} (レート制限またはスレッド数制限の可能性があります)")
                     except Exception as e:
                         print(f"スレッド作成中にエラーが発生しました: {e}")
 
