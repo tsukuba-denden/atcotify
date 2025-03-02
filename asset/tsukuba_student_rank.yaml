@@ -1,17 +1,17 @@
 A:
   grade1:
   - name: Meis_Meiko
-    rank: '24'
+    rank: '23'
   grade2:
   - name: yuubinnkyoku
-    rank: '26'
+    rank: '27'
   - name: lemonydrink
-    rank: '53'
+    rank: '52'
   grade3: []
 H:
   grade1:
   - name: Meis_Meiko
-    rank: '12'
+    rank: '11'
   grade2:
   - name: yuubinnkyoku
     rank: '11'
