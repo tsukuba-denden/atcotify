@@ -6,9 +6,9 @@ import discord
 import yaml
 from discord import app_commands
 from discord.ext import commands, tasks
-from discord.ui import Button, Select, View, ChannelSelect
-from .contest_data import ContestData  # ContestData Cog をインポート
+from discord.ui import Button, ChannelSelect, Select, View
 
+from .contest_data import ContestData  # ContestData Cog をインポート
 
 THREADS_FILE = "asset/threads.yaml"
 CONTEST_TYPES = ["ABC", "ARC", "AGC", "AHC"]
@@ -82,9 +82,12 @@ class Threads(commands.Cog):
                     < start_time - datetime.timedelta(minutes=59)
                 ):
                     try:
-                        nameindex=contest["name"].index("(")
+                        nameindex = contest["name"].index("(")
                         thread = await channel.create_thread(
-                            name=contest["type"]+contest["name"][-4:-1]+" "+contest["name"][:nameindex],
+                            name=contest["type"]
+                            + contest["name"][-4:-1]
+                            + " "
+                            + contest["name"][:nameindex],
                             type=discord.ChannelType.public_thread,
                             auto_archive_duration=1440,
                         )
@@ -109,6 +112,63 @@ class Threads(commands.Cog):
     @check_contests_and_create_threads.before_loop
     async def before_check_contests_and_create_threads(self):
         await self.bot.wait_until_ready()
+
+    @app_commands.command(name="thread---show", description="現在のスレッド設定を表示")
+    async def show_thread_settings(self, interaction: discord.Interaction):
+        """現在のスレッド設定を表示するコマンド"""
+        guild_id = str(interaction.guild_id)
+
+        # ギルドの設定が存在するか確認
+        if guild_id not in self.threads_config:
+            await interaction.response.send_message(
+                "このサーバーではスレッド設定が行われていません。\n`/thread---set_channel` コマンドでチャンネルを設定してください。",
+                ephemeral=True,
+            )
+            return
+
+        # チャンネルが設定されているか確認
+        channel_id = self.threads_config[guild_id].get("channel_id")
+        if not channel_id:
+            await interaction.response.send_message(
+                "スレッド作成チャンネルが設定されていません。\n`/thread---set_channel` コマンドでチャンネルを設定してください。",
+                ephemeral=True,
+            )
+            return
+
+        # Embedを作成
+        embed = discord.Embed(
+            title="スレッド設定情報",
+            description="現在のスレッド自動作成に関する設定情報です",
+            color=0x00BFFF,  # 水色
+        )
+
+        # チャンネル情報をフィールドに追加
+        channel_mention = f"<#{channel_id}>"
+        embed.add_field(
+            name="スレッド作成チャンネル", value=channel_mention, inline=False
+        )
+
+        # コンテストタイプごとの設定をフィールドに追加
+        contest_settings = ""
+        for contest_type in CONTEST_TYPES:
+            is_enabled = (
+                self.threads_config[guild_id]
+                .get(contest_type, {})
+                .get("enabled", False)
+            )
+            status = "✅ 有効" if is_enabled else "❌ 無効"
+            contest_settings += f"**{contest_type}**: {status}\n"
+
+        embed.add_field(
+            name="コンテストタイプ別設定", value=contest_settings, inline=False
+        )
+
+        # 使い方のヒントをフッターに追加
+        embed.set_footer(
+            text="設定を変更するには /thread---set_channel または /thread---set_contest_type コマンドを使用してください"
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=False)
 
     @app_commands.command(
         name="thread---set_channel", description="スレッドを作成するチャンネルを設定"
