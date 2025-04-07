@@ -1,7 +1,9 @@
 A:
   grade1: []
   grade2: []
-  grade3: []
+  grade3:
+  - name: yuubinnkyoku
+    rank: '12'
 H:
   grade1: []
   grade2: []
@@ -11,6 +13,16 @@ P_A:
   grade2: []
   grade3: []
 P_H:
+  grade1: []
+  grade2: []
+  grade3: []
+L_A:
+  grade1: []
+  grade2: []
+  grade3:
+  - name: yuubinnkyoku
+    rank: '12'
+L_H:
   grade1: []
   grade2: []
   grade3: []
