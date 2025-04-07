@@ -17,6 +17,7 @@ from env.config import Config
 # 環境変数から設定を読み込む
 config = Config()
 SEASON = config.season
+YEAR = config.year
 
 # 学校名略称yamlを読み込む
 with open("asset/school_abbreviations.yaml", encoding="utf-8") as f:
@@ -27,7 +28,7 @@ html_dir = "html/"
 
 TSUKUBA_RANK_FILE = "asset/tsukuba_rank.yaml"
 AJL_RANKING_BASE_URL = (
-    "https://img.atcoder.jp/ajl2024{}/school_rankings_grades_1to3_{}.html"
+    f"https://img.atcoder.jp/ajl{YEAR}{{}}/school_rankings_grades_1to3_{{}}.html"
 )
 
 

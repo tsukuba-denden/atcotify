@@ -26,8 +26,8 @@ TSUKUBA_STUDENT_RANK_FILE = "./asset/tsukuba_student_rank.yaml"
 html_dir = "html/"
 
 # ランキングページのベースURL
-GRADE_A_BASE_URL = "https://img.atcoder.jp/ajl2024{}/grade_{}_rankings_A_score.html"
-GRADE_H_BASE_URL = "https://img.atcoder.jp/ajl2024{}/grade_{}_rankings_H_score.html"
+GRADE_A_BASE_URL = "https://img.atcoder.jp/ajl{YEAR}{}/grade_{}_rankings_A_score.html"
+GRADE_H_BASE_URL = "https://img.atcoder.jp/ajl{YEAR}{}/grade_{}_rankings_H_score.html"
 
 
 class Tsukuba_student_rank(commands.Cog):
