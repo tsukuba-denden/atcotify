@@ -17,6 +17,7 @@ from env.config import Config
 # 環境変数から設定を読み込む
 config = Config()
 SEASON = config.season
+YEAR = config.year
 
 # 学校名略称yamlを読み込む
 with open("asset/school_abbreviations.yaml", encoding="utf-8") as f:
@@ -27,7 +28,7 @@ html_dir = "html/"
 
 TSUKUBA_RANK_FILE = "asset/tsukuba_rank.yaml"
 AJL_RANKING_BASE_URL = (
-    "https://img.atcoder.jp/ajl2024{}/school_rankings_grades_1to3_{}.html"
+    f"https://img.atcoder.jp/ajl{YEAR}{{}}/school_rankings_grades_1to3_{{}}.html"
 )
 
 
@@ -194,7 +195,24 @@ class Tsukuba_rank(commands.Cog):
                         previous_data[contest_type]["last_score"] = current_score
                         await self.save_tsukuba_rank(TSUKUBA_RANK_FILE, previous_data)
 
-            await interaction.followup.send(embeds=[embed_a, embed_h])
+            # 有効なEmbedのみをリストに追加
+            embeds_to_send = []
+            if embed_a is not None:
+                embeds_to_send.append(embed_a)
+            if embed_h is not None:
+                embeds_to_send.append(embed_h)
+                
+            # 少なくとも1つのEmbedがある場合のみ送信
+            if embeds_to_send:
+                await interaction.followup.send(embeds=embeds_to_send)
+            else:
+                # どちらのEmbedもNoneの場合はエラーメッセージを表示
+                error_embed = discord.Embed(
+                    title="エラー",
+                    description="順位データを取得できませんでした。",
+                    color=discord.Color.red(),
+                )
+                await interaction.followup.send(embed=error_embed)
 
         except requests.exceptions.RequestException as e:
             embed = discord.Embed(

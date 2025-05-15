@@ -37,3 +37,7 @@ class Config:
     @property
     def google_sheet_name(self) -> str:
         return str(self.config["GOOGLE"]["SHEET_NAME"])
+    
+    @property
+    def year(self) -> str:
+        return str(self.config["YEAR"]["YEAR"])
