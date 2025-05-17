@@ -1,1 +1,4 @@
-
+enable-beta-ecosystems: true
+updates:
+  - package-ecosystem: "uv" 
+    directory: "/" # Location of package manifests
