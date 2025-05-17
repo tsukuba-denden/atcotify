@@ -1,4 +1,13 @@
 enable-beta-ecosystems: true
+
+
 updates:
   - package-ecosystem: "uv" 
     directory: "/" # Location of package manifests
+    schedule:
+      interval: "daily"
+      timezone: Asia/Tokyo
+      time: "06:00"
+    target-branch: main
+    reviewers:
+      - "yuubinnkyoku"
