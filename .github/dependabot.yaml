@@ -1,5 +1,5 @@
 enable-beta-ecosystems: true
-
+version: 2
 
 updates:
   - package-ecosystem: "uv" 
