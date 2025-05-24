@@ -175,12 +175,14 @@ class Tsukuba_rank(commands.Cog):
                         description += f"\n# {current_score}点"
 
                     # Embedを作成
+                    embed_url = f"https://img.atcoder.jp/ajl{YEAR}{season_suffix}/school_rankings_grades_1to3_{contest_type}.html"
                     embed = discord.Embed(
                         title="アルゴリズム"
                         if contest_type == "A"
                         else "ヒューリスティック",
                         description=description,
                         color=discord.Color.blue(),
+                        url=embed_url,
                     )
                     if contest_type == "A":
                         embed_a = embed
