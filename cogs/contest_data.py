@@ -48,99 +48,105 @@ class ContestData(commands.Cog):
             )
 
     async def fetch_contests_from_web(self) -> list[dict]:
-        """AtCoderのウェブサイトからコンテスト情報をスクレイピングする"""
+        """AtCoderのコンテスト情報をYAMLファイルから取得する"""
         headers = {
             "User-Agent": random.choice(USER_AGENTS)  # ランダムにUser-Agentを選択
         }
+        new_url = "https://github.com/tsukuba-denden/atcoder-contest-info/raw/refs/heads/main/contests.yaml"
         async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(ATCODER_CONTESTS_URL, timeout=10) as response:
+            async with session.get(new_url, timeout=10) as response:
                 try:
                     response.raise_for_status()  # ステータスコードが200番台でない場合に例外を発生
-                    html = await response.text()
+                    yaml_text = await response.text()
                 except aiohttp.ClientResponseError as e:
-                    print(f"AtCoderへのリクエストエラー: {e.status} {e.message}")
+                    print(f"YAMLファイル取得エラー: {e.status} {e.message}")
                     return []
                 except asyncio.TimeoutError:
-                    print("AtCoderへのリクエストがタイムアウトしました")
+                    print("YAMLファイル取得リクエストがタイムアウトしました")
                     return []
                 except Exception as e:
-                    print(f"AtCoderからの情報取得中に予期せぬエラーが発生: {e}")
+                    print(f"YAMLファイル取得中に予期せぬエラーが発生: {e}")
                     traceback.print_exc()
                     return []
 
-        soup = BeautifulSoup(html, "html.parser")
-        contests = []
+        try:
+            contests = yaml.safe_load(yaml_text)
+            return contests if contests is not None else []
+        except yaml.YAMLError as e:
+            print(f"YAMLパースエラー: {e}")
+            traceback.print_exc()
+            return []
 
-        upcoming_contests_table = soup.find(id="contest-table-upcoming")
-        if upcoming_contests_table:
-            table = upcoming_contests_table.find("table")
-            if table:
-                for row in table.find("tbody").find_all("tr"):
-                    cells = row.find_all("td")
-                    if len(cells) == 4:
-                        start_time_str = cells[0].find("time").text
-                        start_time_str = start_time_str.split("+")[0]
-                        start_time = datetime.datetime.strptime(
-                            start_time_str, "%Y-%m-%d %H:%M:%S"
-                        )
-                        contest_name = cells[1].find("a").text
-                        duration_str = cells[2].text
-                        rated_range = cells[3].text.strip()
-                        contest_url = cells[1].find("a")["href"]
-                        contest_type = self.extract_contest_type(cells[1])
-
-                        if contest_type:
-                            end_time = start_time + self.parse_duration(duration_str)
-
-                            contests.append(
-                                {
-                                    "name": contest_name,
-                                    "start_time": start_time.strftime(
-                                        "%Y-%m-%d %H:%M:%S"
-                                    ),
-                                    "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S"),
-                                    "duration": duration_str,
-                                    "type": contest_type,
-                                    "url": f"https://atcoder.jp{contest_url}",
-                                    "rated_range": rated_range,
-                                    "threads_created": False,  # スレッド作成フラグを初期化
-                                }
-                            )
-
-        return contests
-
-    def extract_contest_type(self, cell) -> str | None:
-        """コンテストタイプを抽出する"""
-        contest_type_span = cell.find("span", {"aria-hidden": "true"})
-        if not contest_type_span:
-            return None
-        title = contest_type_span.get("title", "")
-        if title == "Algorithm":
-            if "Beginner" in cell.text:
-                return "ABC"
-            elif "Regular" in cell.text:
-                return "ARC"
-            elif "Grand" in cell.text:
-                return "AGC"
-        elif title == "Heuristic":
+    def _determine_contest_type(self, name: str) -> str:
+        """コンテスト名からタイプを判定する"""
+        name_upper = name.upper()
+        if "BEGINNER CONTEST" in name_upper or "ABC" in name_upper:
+            return "ABC"
+        elif "REGULAR CONTEST" in name_upper or "ARC" in name_upper:
+            return "ARC"
+        elif "GRAND CONTEST" in name_upper or "AGC" in name_upper:
+            return "AGC"
+        elif "HEURISTIC CONTEST" in name_upper or "AHC" in name_upper:
             return "AHC"
-        return None
-
-    def parse_duration(self, duration_str: str) -> datetime.timedelta:
-        """コンテスト時間文字列をtimedeltaオブジェクトに変換する"""
-        hours, minutes = map(int, duration_str.split(":"))
-        return datetime.timedelta(hours=hours, minutes=minutes)
+        return "Other"
 
     @tasks.loop(hours=24)
     async def fetch_contests(self):
-        """定期的にコンテスト情報を取得・更新する"""
-        contests = await self.fetch_contests_from_web()
-        if contests:
-            self.contests = contests
+        """定期的にコンテスト情報を取得・更新し、指定された形式に変換する"""
+        raw_contests = await self.fetch_contests_from_web()
+        if raw_contests:
+            transformed_contests = []
+            for item in raw_contests:
+                try:
+                    name = item.get("name_en") or item.get("name_ja", "Unknown Contest")
+
+                    # start_time (ISO 8601 to "YYYY-MM-DD HH:MM:SS")
+                    # Python 3.11+ fromisoformat handles +09:00 directly.
+                    # For older versions, one might need to strip it manually if not supported.
+                    start_time_dt = datetime.datetime.fromisoformat(item["start_time"])
+                    # Convert to naive datetime in local time for formatting
+                    start_time_formatted = start_time_dt.replace(tzinfo=None).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+
+                    duration_min = int(item.get("duration_min", 0))
+
+                    # end_time
+                    end_time_dt = start_time_dt + datetime.timedelta(
+                        minutes=duration_min
+                    )
+                    end_time_formatted = end_time_dt.replace(tzinfo=None).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+
+                    # duration ("HH:MM")
+                    hours, remainder_minutes = divmod(duration_min, 60)
+                    duration_formatted = f"{int(hours):02d}:{int(remainder_minutes):02d}"
+
+                    contest_type = self._determine_contest_type(name)
+
+                    transformed_contests.append(
+                        {
+                            "name": name,
+                            "start_time": start_time_formatted,
+                            "end_time": end_time_formatted,
+                            "duration": duration_formatted,
+                            "type": contest_type,
+                            "url": item.get("url", ""),
+                            "rated_range": item.get("rated_range", ""),
+                            "threads_created": False,
+                        }
+                    )
+                except Exception as e:
+                    print(f"コンテスト情報の変換中にエラーが発生: {item.get('name_ja', 'N/A')} - {e}")
+                    traceback.print_exc()
+                    continue # Skip this contest if there's an error
+
+            self.contests = transformed_contests
             self.save_contests(self.contests)
-            print("コンテスト情報を更新しました。")
+            print(f"{len(transformed_contests)}件のコンテスト情報を更新・保存しました。")
         else:
-            print("コンテスト情報の更新に失敗しました。")
+            print("コンテスト情報の取得に失敗したため、更新できませんでした。")
 
     @fetch_contests.before_loop
     async def before_fetch_contests(self):
