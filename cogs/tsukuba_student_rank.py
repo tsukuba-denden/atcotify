@@ -284,20 +284,24 @@ class Tsukuba_student_rank(commands.Cog):
             description_a, grade_ranks_a = await self.process_grade_ranks(
                 "A", season_suffix, saved_ranks, html_changed["A"]
             )
+            url_a = f"https://img.atcoder.jp/ajl{YEAR}{season_suffix}/school_rankings_grades_1to3_A.html"
             embed_a = discord.Embed(
                 title="アルゴリズム",
                 description=description_a,
                 color=discord.Color.blue(),
+                url=url_a,
             )
 
             # Hコンテストの処理
             description_h, grade_ranks_h = await self.process_grade_ranks(
                 "H", season_suffix, saved_ranks, html_changed["H"]
             )
+            url_h = f"https://img.atcoder.jp/ajl{YEAR}{season_suffix}/school_rankings_grades_1to3_H.html"
             embed_h = discord.Embed(
                 title="ヒューリスティック",
                 description=description_h,
                 color=discord.Color.blue(),
+                url=url_h,
             )
 
             # HTMLに変更があった場合のみデータを更新
