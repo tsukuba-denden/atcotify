@@ -216,7 +216,7 @@ class Tsukuba_rank(commands.Cog):
                 )
                 await interaction.followup.send(embed=error_embed)
 
-        except requests.exceptions.RequestException as e:
+        except requests.RequestException as e:
             embed = discord.Embed(
                 title="エラー",
                 description=f"順位表の取得中にエラーが発生しました: {e}",
