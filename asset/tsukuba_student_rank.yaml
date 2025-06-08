@@ -20,28 +20,32 @@ P_A:
   grade1: []
   grade2:
   - name: Meis_Meiko
-    rank: '33'
-  grade3:
-  - name: yuubinnkyoku
-    rank: '16'
-  - name: lemonydrink
-    rank: '52'
-P_H:
-  grade1: []
-  grade2: []
-  grade3:
-  - name: yuubinnkyoku
-    rank: '1'
-L_A:
-  grade1: []
-  grade2:
-  - name: Meis_Meiko
     rank: '35'
   grade3:
   - name: yuubinnkyoku
     rank: '18'
   - name: lemonydrink
     rank: '54'
+P_H:
+  grade1: []
+  grade2:
+  - name: Meis_Meiko
+    rank: '15'
+  grade3:
+  - name: yuubinnkyoku
+    rank: '6'
+L_A:
+  grade1:
+  - name: Ohkate
+    rank: '13'
+  grade2:
+  - name: Meis_Meiko
+    rank: '43'
+  grade3:
+  - name: yuubinnkyoku
+    rank: '21'
+  - name: lemonydrink
+    rank: '55'
 L_H:
   grade1: []
   grade2:

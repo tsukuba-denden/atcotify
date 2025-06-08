@@ -307,7 +307,7 @@ class Tsukuba_student_rank(commands.Cog):
             embed_h = discord.Embed(
                 title="ヒューリスティック",
                 description=description_h,
-                color=discord.Color.red(),
+                color=discord.Color.blue(),
                 url=url_h,
             )
             embeds.append(embed_h)
