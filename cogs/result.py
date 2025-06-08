@@ -286,7 +286,7 @@ class Contest_result(commands.Cog):
             )  # params, data, headers を設定
             res.raise_for_status()  # HTTPエラーをチェック
             return session
-        except requests.exceptions.HTTPError as e:  # HTTPError をキャッチ
+        except requests.HTTPError as e:  # HTTPError をキャッチ
             print(f"AtCoderログイン中にHTTPエラーが発生しました: {e}")
             if e.response is not None:
                 print(f"レスポンスステータスコード: {e.response.status_code}")
@@ -323,7 +323,7 @@ class Contest_result(commands.Cog):
                 )
 
             return performance_data
-        except requests.exceptions.RequestException as e:
+        except requests.RequestException as e:
             print(f"パフォーマンスデータの取得に失敗しました ({contest_id}): {e}")
             return {}
 
@@ -457,7 +457,7 @@ class Contest_result(commands.Cog):
         try:
             response = requests.get(pdf_url)
             response.raise_for_status()
-        except requests.exceptions.RequestException as e:
+        except requests.RequestException as e:
             print(f"PDFダウンロードに失敗しました ({contest_id}): {e}")
             return None
 
