@@ -115,13 +115,13 @@ class Threads(commands.Cog):
                             contests
                         )  # ContestData Cog の save_contests を呼び出す
 
-                    except discord.errors.Forbidden:
+                    except discord.Forbidden:
                         print(
                             f"スレッド作成: チャンネル {channel.name} (ID: {channel_id}) でスレッド作成権限がありません。"
                         )
                     except ValueError as e:
                         print(f"スレッド名の生成中にエラーが発生しました: {e}")
-                    except discord.errors.HTTPException as e:
+                    except discord.HTTPException as e:
                         print(
                             f"Discord APIエラー: {e} (レート制限またはスレッド数制限の可能性があります)"
                         )
