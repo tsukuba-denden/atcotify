@@ -1,12 +1,13 @@
 import os
 from io import StringIO
+import json # 追加
 
 import discord
 import pandas as pd
 import requests
 import yaml
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks # tasks を追加
 
 import calculate_hash
 from env.config import Config
@@ -29,11 +30,16 @@ html_dir = "html/"
 # ランキングページのベースURL
 GRADE_A_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_A_score.html"
 GRADE_H_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_H_score.html"
+BOT_SETTINGS_FILE = "bot_settings.json" # 追加
 
 
 class Tsukuba_student_rank(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.check_tsukuba_student_rank_loop.start() # ループ処理を開始
+
+    def cog_unload(self):
+        self.check_tsukuba_student_rank_loop.cancel() # コグがアンロードされるときにループをキャンセル
 
     async def save_tsukuba_student_rank(self, ranks_dict, filename):
         """筑波大学附属中学校の生徒の順位とユーザIDをYAMLファイルに保存する"""
@@ -233,57 +239,56 @@ class Tsukuba_student_rank(commands.Cog):
 
         return description, grade_ranks_all
 
-    @app_commands.command(
-        name="tsukuba_student_rank",
-        description="筑波大学附属中学校の生徒の順位を表示します",
-    )
-    async def tsukuba_student_rank_command(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+    async def get_tsukuba_student_rank_data(self):
+        """筑波大学附属中学校の生徒の順位データを取得する"""
+        season_suffix = "winter" if SEASON == "WINTER" else "summer"
+        html_changed = {"A": False, "H": False}
+        embeds = []
+        changed_flag = False # 変更があったかどうかを示すフラグ
+
+        # 前回のハッシュ値を確認するコンテスト種類と学年
+        check_contest = "A"
+        check_grade = 1
+
+        # 前回のハッシュ値を取得
+        html_file_path = os.path.join(
+            html_dir,
+            f"grade_{check_grade}_rankings_{check_contest}_{season_suffix}.html",
+        )
         try:
-            season_suffix = "winter" if SEASON == "WINTER" else "summer"
-            html_changed = {"A": False, "H": False}
+            previous_html_hash = calculate_hash.calculate_hash(html_file_path)
+        except FileNotFoundError:
+            previous_html_hash = None
 
-            # 前回のハッシュ値を確認するコンテスト種類と学年
-            check_contest = "A"
-            check_grade = 1
+        # 最新のHTMLをダウンロード
+        response = requests.get(GRADE_A_BASE_URL.format(season_suffix, check_grade))
+        response.raise_for_status()
+        response.encoding = "utf-8"
+        html = response.text
 
-            # 前回のハッシュ値を取得
-            html_file_path = os.path.join(
-                html_dir,
-                f"grade_{check_grade}_rankings_{check_contest}_{season_suffix}.html",
-            )
-            try:
-                previous_html_hash = calculate_hash.calculate_hash(html_file_path)
-            except FileNotFoundError:
-                previous_html_hash = None
+        # HTMLをファイルに保存
+        with open(html_file_path, "w", encoding="utf-8") as f:
+            f.write(html)
 
-            # 最新のHTMLをダウンロード
-            response = requests.get(GRADE_A_BASE_URL.format(season_suffix, check_grade))
-            response.raise_for_status()
-            response.encoding = "utf-8"
-            html = response.text
+        # 現在のHTMLのハッシュ値を取得
+        current_html_hash = calculate_hash.calculate_hash(html_file_path)
 
-            # HTMLをファイルに保存
-            with open(html_file_path, "w", encoding="utf-8") as f:
-                f.write(html)
+        # ハッシュ値を比較して変更を検出
+        if current_html_hash != previous_html_hash:
+            html_changed["A"] = True
+            html_changed["H"] = True
+            changed_flag = True # 変更があったことを記録
 
-            # 現在のHTMLのハッシュ値を取得
-            current_html_hash = calculate_hash.calculate_hash(html_file_path)
+        # 前回の順位を読み込み
+        saved_ranks = await self.load_tsukuba_student_rank(
+            TSUKUBA_STUDENT_RANK_FILE
+        )
 
-            # ハッシュ値を比較して変更を検出
-            if current_html_hash != previous_html_hash:
-                html_changed["A"] = True
-                html_changed["H"] = True
-
-            # 前回の順位を読み込み
-            saved_ranks = await self.load_tsukuba_student_rank(
-                TSUKUBA_STUDENT_RANK_FILE
-            )
-
-            # Aコンテストの処理
-            description_a, grade_ranks_a = await self.process_grade_ranks(
-                "A", season_suffix, saved_ranks, html_changed["A"]
-            )
+        # Aコンテストの処理
+        description_a, grade_ranks_a = await self.process_grade_ranks(
+            "A", season_suffix, saved_ranks, html_changed["A"]
+        )
+        if description_a: # description が空でない場合のみ Embed を作成
             url_a = f"https://img.atcoder.jp/ajl{YEAR}{season_suffix}/school_rankings_grades_1to3_A.html"
             embed_a = discord.Embed(
                 title="アルゴリズム",
@@ -291,74 +296,163 @@ class Tsukuba_student_rank(commands.Cog):
                 color=discord.Color.blue(),
                 url=url_a,
             )
+            embeds.append(embed_a)
 
-            # Hコンテストの処理
-            description_h, grade_ranks_h = await self.process_grade_ranks(
-                "H", season_suffix, saved_ranks, html_changed["H"]
-            )
+        # Hコンテストの処理
+        description_h, grade_ranks_h = await self.process_grade_ranks(
+            "H", season_suffix, saved_ranks, html_changed["H"]
+        )
+        if description_h: # description が空でない場合のみ Embed を作成
             url_h = f"https://img.atcoder.jp/ajl{YEAR}{season_suffix}/school_rankings_grades_1to3_H.html"
             embed_h = discord.Embed(
                 title="ヒューリスティック",
                 description=description_h,
-                color=discord.Color.blue(),
+                color=discord.Color.red(),
                 url=url_h,
             )
+            embeds.append(embed_h)
 
-            # HTMLに変更があった場合のみデータを更新
-            if html_changed["A"] or html_changed["H"]:
-                # 現在の順位を整形
-                current_ranks = {
-                    "A": {
-                        f"grade{i + 1}": [
-                            {"name": user_id, "rank": rank}
-                            for rank, user_id in grade_ranks
-                        ]
-                        for i, grade_ranks in enumerate(grade_ranks_a)
-                    },
-                    "H": {
-                        f"grade{i + 1}": [
-                            {"name": user_id, "rank": rank}
-                            for rank, user_id in grade_ranks
-                        ]
-                        for i, grade_ranks in enumerate(grade_ranks_h)
-                    },
-                    "P_A": saved_ranks["L_A"],
-                    "P_H": saved_ranks["L_H"],
-                    "L_A": {
-                        f"grade{i + 1}": [
-                            {"name": user_id, "rank": rank}
-                            for rank, user_id in grade_ranks
-                        ]
-                        for i, grade_ranks in enumerate(grade_ranks_a)
-                    },
-                    "L_H": {
-                        f"grade{i + 1}": [
-                            {"name": user_id, "rank": rank}
-                            for rank, user_id in grade_ranks
-                        ]
-                        for i, grade_ranks in enumerate(grade_ranks_h)
-                    },
-                }
-                # データを保存
-                await self.save_tsukuba_student_rank(
-                    current_ranks, TSUKUBA_STUDENT_RANK_FILE
-                )
+        # 新しい順位を保存
+        if html_changed["A"] or html_changed["H"]:
+            # P_A, P_H に L_A, L_H の内容をコピー
+            saved_ranks["P_A"] = saved_ranks["L_A"].copy()
+            saved_ranks["P_H"] = saved_ranks["L_H"].copy()
 
-            await interaction.followup.send(embeds=[embed_a, embed_h])
+            # L_A, L_H に現在の順位を保存
+            for i, grade_rank_list in enumerate(grade_ranks_a):
+                saved_ranks["L_A"][f"grade{i + 1}"] = [
+                    {"name": user_id, "rank": rank}
+                    for rank, user_id in grade_rank_list
+                ]
+            for i, grade_rank_list in enumerate(grade_ranks_h):
+                saved_ranks["L_H"][f"grade{i + 1}"] = [
+                    {"name": user_id, "rank": rank}
+                    for rank, user_id in grade_rank_list
+                ]
+
+            await self.save_tsukuba_student_rank(
+                saved_ranks, TSUKUBA_STUDENT_RANK_FILE
+            )
+        return embeds, changed_flag
+
+    @app_commands.command(
+        name="tsukuba_student_rank",
+        description="筑波大学附属中学校の生徒の順位を表示します",
+    )
+    async def tsukuba_student_rank_command(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        try:
+            embeds, _ = await self.get_tsukuba_student_rank_data()
+            if embeds:
+                await interaction.followup.send(embeds=embeds)
+            else:
+                await interaction.followup.send("筑波大学附属中学校の生徒データが見つかりませんでした。")
 
         except requests.RequestException as e:
-            error_message = f"順位表の取得中にエラーが発生しました: {e}"
-            embed = discord.Embed(
-                title="エラー", description=error_message, color=discord.Color.red()
+            print(f"Error fetching student data: {e}")
+            await interaction.followup.send(
+                "生徒データの取得中にエラーが発生しました。しばらくしてからもう一度お試しください。"
             )
-            await interaction.followup.send(embed=embed)
         except Exception as e:
-            error_message = f"エラーが発生しました: {e}"
+            print(f"An unexpected error occurred in student rank: {e}")
+            await interaction.followup.send("予期せぬエラーが発生しました。")
+
+    @tasks.loop(minutes=15)
+    async def check_tsukuba_student_rank_loop(self):
+        """15分ごとに筑波大学附属中学校の生徒の順位を確認し、変更があれば通知する"""
+        print("Checking Tsukuba Student Rank...")
+        try:
+            with open(BOT_SETTINGS_FILE, "r") as f:
+                settings = json.load(f)
+            channel_id = settings.get("tsukuba_student_rank_channel_id")
+
+            if channel_id:
+                channel = self.bot.get_channel(int(channel_id))
+                if channel:
+                    embeds, changed = await self.get_tsukuba_student_rank_data()
+                    if changed and embeds:
+                        await channel.send(embeds=embeds)
+                        print("Tsukuba Student Rank updated and sent.")
+                    elif not embeds:
+                        print("Tsukuba Student Rank data not found.")
+                    else:
+                        print("No changes in Tsukuba Student Rank.")
+                else:
+                    print(f"Channel with ID {channel_id} not found for student rank.")
+            else:
+                print("Tsukuba student rank channel not set.")
+        except FileNotFoundError:
+            print(f"{BOT_SETTINGS_FILE} not found for student rank.")
+        except Exception as e:
+            print(f"Error in check_tsukuba_student_rank_loop: {e}")
+
+    @check_tsukuba_student_rank_loop.before_loop
+    async def before_check_tsukuba_student_rank_loop(self):
+        await self.bot.wait_until_ready()
+
+    @app_commands.command(
+        name="tsukuba_student_rank---set_ch",
+        description="筑波大学附属中学校の生徒の順位通知チャンネルを設定します。",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def tsukuba_student_rank_set_channel(
+        self, interaction: discord.Interaction, channel: discord.TextChannel
+    ):
+        try:
+            with open(BOT_SETTINGS_FILE, "r+") as f:
+                settings = json.load(f)
+                settings["tsukuba_student_rank_channel_id"] = str(channel.id)
+                f.seek(0)
+                json.dump(settings, f, indent=4)
+                f.truncate()
             embed = discord.Embed(
-                title="エラー", description=error_message, color=discord.Color.red()
+                title="設定完了",
+                description=f"筑波大学附属中学校の生徒の順位通知チャンネルを {channel.mention} に設定しました。",
+                color=discord.Color.green(),
             )
-            await interaction.followup.send(embed=embed)
+            await interaction.response.send_message(embed=embed)
+        except Exception as e:
+            embed = discord.Embed(
+                title="エラー",
+                description=f"エラーが発生しました: {e}",
+                color=discord.Color.red(),
+            )
+            await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(
+        name="tsukuba_student_rank---unset_ch",
+        description="筑波大学附属中学校の生徒の順位通知チャンネルを解除します。",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def tsukuba_student_rank_unset_channel(self, interaction: discord.Interaction):
+        try:
+            with open(BOT_SETTINGS_FILE, "r+") as f:
+                settings = json.load(f)
+                if "tsukuba_student_rank_channel_id" in settings:
+                    del settings["tsukuba_student_rank_channel_id"]
+                    f.seek(0)
+                    json.dump(settings, f, indent=4)
+                    f.truncate()
+                    embed = discord.Embed(
+                        title="設定解除",
+                        description="筑波大学附属中学校の生徒の順位通知チャンネルを解除しました。",
+                        color=discord.Color.green(),
+                    )
+                    await interaction.response.send_message(embed=embed)
+                else:
+                    embed = discord.Embed(
+                        title="情報",
+                        description="筑波大学附属中学校の生徒の順位通知チャンネルは設定されていません。",
+                        color=discord.Color.blue(),
+                    )
+                    await interaction.response.send_message(embed=embed)
+        except Exception as e:
+            embed = discord.Embed(
+                title="エラー",
+                description=f"エラーが発生しました: {e}",
+                color=discord.Color.red(),
+            )
+            await interaction.response.send_message(embed=embed)
 
-async def setup(bot: commands.Bot):
+async def setup(bot):
     await bot.add_cog(Tsukuba_student_rank(bot))

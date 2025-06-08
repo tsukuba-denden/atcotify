@@ -258,7 +258,7 @@ class Tsukuba_rank(commands.Cog):
         await self.bot.wait_until_ready()
 
     @app_commands.command(
-        name="tsukuba_rank---set_channel",
+        name="tsukuba_rank---set_ch",
         description="筑波大学附属中学校の順位通知チャンネルを設定します。",
     )
     @app_commands.checks.has_permissions(administrator=True)
@@ -287,7 +287,7 @@ class Tsukuba_rank(commands.Cog):
             await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
-        name="tsukuba_rank---unset_channel",
+        name="tsukuba_rank---unset_ch",
         description="筑波大学附属中学校の順位通知チャンネルを解除します。",
     )
     @app_commands.checks.has_permissions(administrator=True)
