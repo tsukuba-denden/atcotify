@@ -231,23 +231,31 @@ class Tsukuba_rank(commands.Cog):
         try:
             with open(BOT_SETTINGS_FILE, "r") as f:
                 settings = json.load(f)
-            channel_id = settings.get("tsukuba_rank_channel_id")
+            
+            guild_ids = [guild.id for guild in self.bot.guilds]
 
-            if channel_id:
-                channel = self.bot.get_channel(int(channel_id))
-                if channel:
-                    embeds, changed = await self.get_tsukuba_rank_data()
-                    if changed and embeds:
-                        await channel.send(embeds=embeds)
-                        print("Tsukuba Rank updated and sent.")
-                    elif not embeds:
-                        print("Tsukuba Rank data not found.")
-                    else:
-                        print("No changes in Tsukuba Rank.")
-                else:
-                    print(f"Channel with ID {channel_id} not found.")
-            else:
-                print("Tsukuba rank channel not set.")
+            for guild_id in guild_ids:
+                guild_settings = settings.get(str(guild_id))
+                if guild_settings:
+                    channel_id = guild_settings.get("tsukuba_rank_channel_id")
+                    if channel_id:
+                        channel = self.bot.get_channel(int(channel_id))
+                        if channel:
+                            embeds, changed = await self.get_tsukuba_rank_data()
+                            if changed and embeds:
+                                await channel.send(embeds=embeds)
+                                print(f"Tsukuba Rank updated and sent to guild {guild_id}.")
+                            elif not embeds:
+                                print(f"Tsukuba Rank data not found for guild {guild_id}.")
+                            else:
+                                print(f"No changes in Tsukuba Rank for guild {guild_id}.")
+                        else:
+                            print(f"Channel with ID {channel_id} not found in guild {guild_id}.")
+                    # else: # チャンネルIDが設定されていない場合、何もしない
+                    #     print(f"Tsukuba rank channel not set for guild {guild_id}.") 
+                # else: # サーバーの設定が存在しない場合、何もしない
+                #    print(f"Settings not found for guild {guild_id}.")
+
         except FileNotFoundError:
             print(f"{BOT_SETTINGS_FILE} not found.")
         except Exception as e:
@@ -266,9 +274,12 @@ class Tsukuba_rank(commands.Cog):
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ):
         try:
+            guild_id = str(interaction.guild_id)
             with open(BOT_SETTINGS_FILE, "r+") as f:
                 settings = json.load(f)
-                settings["tsukuba_rank_channel_id"] = str(channel.id)
+                if guild_id not in settings:
+                    settings[guild_id] = {}
+                settings[guild_id]["tsukuba_rank_channel_id"] = str(channel.id)
                 f.seek(0)
                 json.dump(settings, f, indent=4)
                 f.truncate()
@@ -293,10 +304,13 @@ class Tsukuba_rank(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def tsukuba_rank_unset_channel(self, interaction: discord.Interaction):
         try:
+            guild_id = str(interaction.guild_id)
             with open(BOT_SETTINGS_FILE, "r+") as f:
                 settings = json.load(f)
-                if "tsukuba_rank_channel_id" in settings:
-                    del settings["tsukuba_rank_channel_id"]
+                if guild_id in settings and "tsukuba_rank_channel_id" in settings[guild_id]:
+                    del settings[guild_id]["tsukuba_rank_channel_id"]
+                    if not settings[guild_id]: # 他に設定がなければサーバーIDごと削除
+                        del settings[guild_id]
                     f.seek(0)
                     json.dump(settings, f, indent=4)
                     f.truncate()

@@ -364,23 +364,31 @@ class Tsukuba_student_rank(commands.Cog):
         try:
             with open(BOT_SETTINGS_FILE, "r") as f:
                 settings = json.load(f)
-            channel_id = settings.get("tsukuba_student_rank_channel_id")
 
-            if channel_id:
-                channel = self.bot.get_channel(int(channel_id))
-                if channel:
-                    embeds, changed = await self.get_tsukuba_student_rank_data()
-                    if changed and embeds:
-                        await channel.send(embeds=embeds)
-                        print("Tsukuba Student Rank updated and sent.")
-                    elif not embeds:
-                        print("Tsukuba Student Rank data not found.")
-                    else:
-                        print("No changes in Tsukuba Student Rank.")
-                else:
-                    print(f"Channel with ID {channel_id} not found for student rank.")
-            else:
-                print("Tsukuba student rank channel not set.")
+            guild_ids = [guild.id for guild in self.bot.guilds]
+
+            for guild_id in guild_ids:
+                guild_settings = settings.get(str(guild_id))
+                if guild_settings:
+                    channel_id = guild_settings.get("tsukuba_student_rank_channel_id")
+                    if channel_id:
+                        channel = self.bot.get_channel(int(channel_id))
+                        if channel:
+                            embeds, changed = await self.get_tsukuba_student_rank_data()
+                            if changed and embeds:
+                                await channel.send(embeds=embeds)
+                                print(f"Tsukuba Student Rank updated and sent to guild {guild_id}.")
+                            elif not embeds:
+                                print(f"Tsukuba Student Rank data not found for guild {guild_id}.")
+                            else:
+                                print(f"No changes in Tsukuba Student Rank for guild {guild_id}.")
+                        else:
+                            print(f"Channel with ID {channel_id} not found in guild {guild_id} for student rank.")
+                    # else:
+                    #     print(f"Tsukuba student rank channel not set for guild {guild_id}.")
+                # else:
+                #     print(f"Settings not found for guild {guild_id} for student rank.")
+
         except FileNotFoundError:
             print(f"{BOT_SETTINGS_FILE} not found for student rank.")
         except Exception as e:
@@ -399,9 +407,12 @@ class Tsukuba_student_rank(commands.Cog):
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ):
         try:
+            guild_id = str(interaction.guild_id)
             with open(BOT_SETTINGS_FILE, "r+") as f:
                 settings = json.load(f)
-                settings["tsukuba_student_rank_channel_id"] = str(channel.id)
+                if guild_id not in settings:
+                    settings[guild_id] = {}
+                settings[guild_id]["tsukuba_student_rank_channel_id"] = str(channel.id)
                 f.seek(0)
                 json.dump(settings, f, indent=4)
                 f.truncate()
@@ -426,10 +437,13 @@ class Tsukuba_student_rank(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def tsukuba_student_rank_unset_channel(self, interaction: discord.Interaction):
         try:
+            guild_id = str(interaction.guild_id)
             with open(BOT_SETTINGS_FILE, "r+") as f:
                 settings = json.load(f)
-                if "tsukuba_student_rank_channel_id" in settings:
-                    del settings["tsukuba_student_rank_channel_id"]
+                if guild_id in settings and "tsukuba_student_rank_channel_id" in settings[guild_id]:
+                    del settings[guild_id]["tsukuba_student_rank_channel_id"]
+                    if not settings[guild_id]: # 他に設定がなければサーバーIDごと削除
+                        del settings[guild_id]
                     f.seek(0)
                     json.dump(settings, f, indent=4)
                     f.truncate()
