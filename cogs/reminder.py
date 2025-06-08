@@ -107,10 +107,10 @@ class Reminder(commands.Cog):
         reminder_time: int,
     ):
         """リマインダーを送信する"""
-        guild_id = str(guild_id)
-        if guild_id not in self.reminders:
+        guild_id_str = str(guild_id)
+        if guild_id_str not in self.reminders:
             return
-        reminder_config = self.reminders[guild_id]
+        reminder_config = self.reminders[guild_id_str]
         if contest["type"] not in reminder_config:
             return
 
@@ -169,7 +169,7 @@ class Reminder(commands.Cog):
                 role = await channel.guild.create_role(name=role_name)
                 message_content = role.mention
                 print(f"ロール {role_name} を作成しました。")
-            except discord.errors.Forbidden:
+            except discord.Forbidden:
                 print(f"ロール {role_name} の作成に必要な権限がありません。")
                 message_content = f"{contest['type']}参加勢はいませんか？"  # ロール作成失敗時にメンションを諦める
             except Exception as e:
@@ -184,9 +184,9 @@ class Reminder(commands.Cog):
                 f"リマインダーを送信しました: {contest['name']} ({reminder_time}分前), サーバーID: {guild_id}"
             )
 
-        except discord.errors.Forbidden:
+        except discord.Forbidden:
             print(
-                f"リマインダー送信に必要な権限がありません: {channel.name} , サーバーID: {guild_id}"
+                f"リマインダー送信に必要な権限がありません: {channel.name} , サーバーID: {guild_id_str}"
             )
         except Exception as e:
             print(f"リマインダーの送信中にエラーが発生しました: {e}")
