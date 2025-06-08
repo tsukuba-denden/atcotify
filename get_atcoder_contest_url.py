@@ -2,9 +2,9 @@ import datetime
 
 def get_atcoder_contest_url():
     # 基準日時
-    base_datetime = datetime(2024, 6, 15, 22, 40, 0)
+    base_datetime = datetime.datetime(2024, 6, 15, 22, 40, 0)
     # 現在日時
-    now = datetime.now()
+    now = datetime.datetime.now()
 
     # 基準日時からの経過週数を計算
     weeks_since_base = (now - base_datetime).days // 7
