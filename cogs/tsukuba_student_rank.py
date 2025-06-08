@@ -346,7 +346,7 @@ class Tsukuba_student_rank(commands.Cog):
 
             await interaction.followup.send(embeds=[embed_a, embed_h])
 
-        except requests.exceptions.RequestException as e:
+        except requests.RequestException as e:
             error_message = f"順位表の取得中にエラーが発生しました: {e}"
             embed = discord.Embed(
                 title="エラー", description=error_message, color=discord.Color.red()
