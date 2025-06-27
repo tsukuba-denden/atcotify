@@ -229,6 +229,9 @@ class Tsukuba_rank(commands.Cog):
         """15分ごとに筑波大学附属中学校の順位を確認し、変更があれば通知する"""
         print("Checking Tsukuba Rank...")
         try:
+            # Call get_tsukuba_rank_data before the loop
+            embeds, changed = await self.get_tsukuba_rank_data()
+
             with open(BOT_SETTINGS_FILE, "r") as f:
                 settings = json.load(f)
             
@@ -241,7 +244,7 @@ class Tsukuba_rank(commands.Cog):
                     if channel_id:
                         channel = self.bot.get_channel(int(channel_id))
                         if channel:
-                            embeds, changed = await self.get_tsukuba_rank_data()
+                            # Use stored embeds and changed values
                             if changed and embeds:
                                 await channel.send(embeds=embeds)
                                 print(f"Tsukuba Rank updated and sent to guild {guild_id}.")
