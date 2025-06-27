@@ -13,6 +13,7 @@ INITIAL_EXTENSIONS = [
     "cogs.result",
     "cogs.threads",
     "cogs.contest_data",
+    "cogs.welcome",
 ]
 
 config = Config()
