@@ -140,7 +140,7 @@ class ContestData(commands.Cog):
     async def before_fetch_contests(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="schedule", description="Displays upcoming AtCoder contests.")
+    @app_commands.command(name="reminder---schedule", description="Displays upcoming AtCoder contests.")
     async def contest_schedule_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
@@ -199,7 +199,7 @@ class ContestData(commands.Cog):
                     f"**Starts:** {start_time_to_display.strftime('%Y-%m-%d %H:%M')} JST\n"
                     f"**Duration:** {contest['duration']}\n"
                     f"**Type:** {contest['type']}\n"
-                    f"**Rated:** {contest['rated_range'] if contest['rated_range'] else 'N/A'}\n"
+                    f"**Rated:** {contest['rated_range'] if contest['rated_range'] else '-'}\n"
                 )
             embed.description = "\n".join(description_lines)
             if len(upcoming_contests_details) > 10:
