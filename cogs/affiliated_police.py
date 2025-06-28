@@ -2,7 +2,13 @@ import discord
 from discord.ext import commands
 
 # Keywords to detect
-KEYWORDS = ["筑付", "付属中", "大学付属", "桐陰祭", "桐陰会"]
+KEYWORDS = {
+    "筑付": "筑附",
+    "付属中": "附属中",
+    "大学付属": "大学附属",
+    "桐蔭祭": "桐陰祭",
+    "桐蔭会": "桐陰会"
+}
 
 class AffiliatedPolice(commands.Cog):
     def __init__(self, bot):
@@ -15,18 +21,19 @@ class AffiliatedPolice(commands.Cog):
             return
 
         # Check if any keyword is in the message content
-        message_content = message.content.lower() # Convert to lowercase for case-insensitive matching if needed, though Japanese keywords might not need this.
+        message_content = message.content # No need for lower() with Japanese keywords
 
         found_keyword = None
-        for keyword in KEYWORDS:
+        for keyword in KEYWORDS.keys():
             if keyword in message_content:
                 found_keyword = keyword
                 break
 
         if found_keyword:
+            correct_term = KEYWORDS[found_keyword]
             # Action to be taken when a keyword is found
             print(f"Keyword '{found_keyword}' detected in message: {message.content}")
-            await message.reply("附属警察です！") # Changed from the previous reply
+            await message.reply(f"🚨附属警察出動！！！🚨\n「{found_keyword}」ではなく「{correct_term}」です！！")
 
 async def setup(bot):
     await bot.add_cog(AffiliatedPolice(bot))
