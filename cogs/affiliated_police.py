@@ -32,7 +32,7 @@ class AffiliatedPolice(commands.Cog):
         if found_keyword:
             correct_term = KEYWORDS[found_keyword]
             # Action to be taken when a keyword is found
-            print(f"Keyword '{found_keyword}' detected in message: {message.content}")
+            print(f"メッセージ内でキーワード '{found_keyword}' が検出されました： {message.content}")
             await message.reply(f"🚨附属警察出動！！！🚨\n「{found_keyword}」ではなく「{correct_term}」です！！")
 
 async def setup(bot):
