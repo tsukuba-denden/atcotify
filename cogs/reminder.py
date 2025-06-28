@@ -120,10 +120,15 @@ class Reminder(commands.Cog):
                         channel = self.bot.get_channel(channel_id)
                         if channel:
                             try:
-                                await channel.send("今日はABCないです！！！")
-                                print(f"Sent 'no ABC' notification to channel {channel_id} in guild {guild_id_str}.")
+                                embed = discord.Embed(
+                                    title="本日のABC開催情報",
+                                    description="本日は 21:00からのABCの開催はありません。",
+                                    color=discord.Color.orange()
+                                )
+                                await channel.send(embed=embed)
+                                print(f"Sent 'no ABC' embed notification to channel {channel_id} in guild {guild_id_str}.")
                             except discord.Forbidden:
-                                print(f"Error: Missing permissions to send to channel {channel_id} in guild {guild_id_str}.")
+                                print(f"Error: Missing permissions to send embed to channel {channel_id} in guild {guild_id_str}.")
                             except Exception as e:
                                 print(f"Error sending 'no ABC' notification to channel {channel_id} in guild {guild_id_str}: {e}")
                         else:
