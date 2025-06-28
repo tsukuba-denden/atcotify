@@ -60,6 +60,87 @@ class Reminder(commands.Cog):
         self.reminders = self.load_reminders()
         # self.fetch_contests.start()  # タスクは ContestData Cog で開始
         self.check_reminders.start()  # Start the check_reminders task
+        self.last_checked_date_no_abc = None
+        self.check_no_abc_notification.start()
+
+    @tasks.loop(minutes=1)
+    async def check_no_abc_notification(self):
+        contest_data_cog = self.bot.get_cog("ContestData")
+        if not contest_data_cog or not contest_data_cog.contests:
+            print("Error: ContestData cog not found or no contests loaded for 'check_no_abc_notification'.")
+            return
+
+        now = datetime.datetime.now()
+        today_date = now.date()
+
+        if self.last_checked_date_no_abc == today_date:
+            # Already checked today or notification sent.
+            return
+
+        if now.weekday() == 5 and now.hour == 20 and now.minute == 0:  # Saturday 20:00
+            print(f"[{now}] Saturday 20:00 detected. Checking for ABC contests...")
+
+            abc_scheduled_for_2100 = False
+            contests = contest_data_cog.contests
+            for contest in contests:
+                try:
+                    contest_start_time = datetime.datetime.strptime(contest["start_time"], "%Y-%m-%d %H:%M:%S")
+                    if (contest["type"] == "ABC" and
+                            contest_start_time.weekday() == 5 and  # Saturday
+                            contest_start_time.date() == today_date and
+                            contest_start_time.hour == 21):
+                        abc_scheduled_for_2100 = True
+                        print(f"Found ABC contest: {contest['name']} scheduled for today at 21:00.")
+                        break
+                except ValueError:
+                    print(f"Error parsing start_time for contest: {contest.get('name', 'Unknown Contest')}")
+                    continue # Skip this contest if date parsing fails
+
+            if not abc_scheduled_for_2100:
+                print(f"[{now}] No ABC contest found for today (Saturday) at 21:00. Sending 'no ABC' notifications.")
+                for guild_id_str, reminder_config in self.reminders.items():
+                    if "ABC" not in reminder_config or not reminder_config["ABC"]:
+                        continue
+
+                    abc_config_list = reminder_config["ABC"]
+                    abc_reminders_enabled = any(config.get("enabled", False) for config in abc_config_list)
+
+                    if abc_reminders_enabled:
+                        channel_id_str = reminder_config.get("reminder_channel_id")
+                        if not channel_id_str:
+                            print(f"Error: 'reminder_channel_id' not found for guild {guild_id_str}.")
+                            continue
+
+                        try:
+                            channel_id = int(channel_id_str)
+                        except ValueError:
+                            print(f"Error: Invalid 'reminder_channel_id' format for guild {guild_id_str}: {channel_id_str}")
+                            continue
+
+                        channel = self.bot.get_channel(channel_id)
+                        if channel:
+                            try:
+                                embed = discord.Embed(
+                                    title="本日のABC開催情報",
+                                    description="本日は 21:00からのABCの開催はありません。",
+                                    color=discord.Color.orange()
+                                )
+                                await channel.send(embed=embed)
+                                print(f"Sent 'no ABC' embed notification to channel {channel_id} in guild {guild_id_str}.")
+                            except discord.Forbidden:
+                                print(f"Error: Missing permissions to send embed to channel {channel_id} in guild {guild_id_str}.")
+                            except Exception as e:
+                                print(f"Error sending 'no ABC' notification to channel {channel_id} in guild {guild_id_str}: {e}")
+                        else:
+                            print(f"Error: Channel {channel_id} not found for guild {guild_id_str}.")
+
+            # Update last checked date after processing for Saturday 20:00
+            self.last_checked_date_no_abc = today_date
+            # self.save_reminders(self.reminders) # Not strictly needed as last_checked_date_no_abc is in-memory
+
+    @check_no_abc_notification.before_loop
+    async def before_check_no_abc_notification(self):
+        await self.bot.wait_until_ready()
 
     async def run_fetch_contests(self):
         """コンテスト情報を取得して保存する"""
