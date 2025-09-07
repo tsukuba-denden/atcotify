@@ -4,17 +4,14 @@ import time
 import traceback
 from typing import Dict, List
 
-import aiohttp
 import discord
 import yaml
-from bs4 import BeautifulSoup
 from discord import app_commands
 from discord.ext import commands, tasks
 from discord.ui import Button, ChannelSelect, Select, View
 
 from env.config import Config
 
-from .contest_data import ContestData  # ContestData Cogをインポート
 
 # TODO: 全てのメッセージをembedに
 # TODO: ABCをスケジュール(Discordの機能)化←いる？
@@ -63,6 +60,30 @@ class Reminder(commands.Cog):
         self.last_checked_date_no_abc = None
         self.check_no_abc_notification.start()
 
+    def _find_abc_contests_in_current_week(self, contests, current_date):
+        """Find ABC contests in the current week (Monday to Sunday)"""
+        # Get the Monday of the current week
+        current_monday = current_date - datetime.timedelta(days=current_date.weekday())
+        # Get the Sunday of the current week  
+        current_sunday = current_monday + datetime.timedelta(days=6)
+        
+        abc_contests_this_week = []
+        for contest in contests:
+            try:
+                contest_start_time = datetime.datetime.strptime(contest["start_time"], "%Y-%m-%d %H:%M:%S")
+                if (contest["type"] == "ABC" and
+                        current_monday <= contest_start_time.date() <= current_sunday):
+                    abc_contests_this_week.append({
+                        "contest": contest,
+                        "start_time": contest_start_time
+                    })
+            except ValueError:
+                continue
+        
+        # Sort by start time
+        abc_contests_this_week.sort(key=lambda x: x["start_time"])
+        return abc_contests_this_week
+
     @tasks.loop(minutes=1)
     async def check_no_abc_notification(self):
         contest_data_cog = self.bot.get_cog("ContestData")
@@ -98,6 +119,10 @@ class Reminder(commands.Cog):
 
             if not abc_scheduled_for_2100:
                 print(f"[{now}] No ABC contest found for today (Saturday) at 21:00. Sending 'no ABC' notifications.")
+                
+                # Find ABC contests in the current week
+                abc_contests_this_week = self._find_abc_contests_in_current_week(contests, today_date)
+                
                 for guild_id_str, reminder_config in self.reminders.items():
                     if "ABC" not in reminder_config or not reminder_config["ABC"]:
                         continue
@@ -120,9 +145,24 @@ class Reminder(commands.Cog):
                         channel = self.bot.get_channel(channel_id)
                         if channel:
                             try:
+                                # Create the notification message
+                                description = "本日は 21:00からのABCの開催はありません。"
+                                
+                                # Add information about ABC contests in the current week
+                                if abc_contests_this_week:
+                                    description += "\n\n**今週のABC開催予定:**"
+                                    for abc_info in abc_contests_this_week:
+                                        contest = abc_info["contest"]
+                                        start_time = abc_info["start_time"]
+                                        weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
+                                        weekday = weekday_names[start_time.weekday()]
+                                        description += f"\n• {contest['name']}: {start_time.strftime('%m/%d')}({weekday}) {start_time.strftime('%H:%M')}"
+                                else:
+                                    description += "\n\n今週は他のABC開催予定もありません。"
+                                
                                 embed = discord.Embed(
                                     title="本日のABC開催情報",
-                                    description="本日は 21:00からのABCの開催はありません。",
+                                    description=description,
                                     color=discord.Color.orange()
                                 )
                                 await channel.send(embed=embed)
