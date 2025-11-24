@@ -26,6 +26,10 @@ class AffiliatedPolice(commands.Cog):
         # Check if any keyword is in the message content
         message_content = message.content # No need for lower() with Japanese keywords
 
+        if "UI/UX" in message_content:
+            await message.reply("🚨 こちらは“UI/UX”警察です 🚨   UIとUXは似て非なる概念であるため、スラッシュ区切りの表記は推奨されていません。UIが実体ある一つのモノであるのに対し、UXには実体がなく、それも一つとは限りません。人々それぞれに内在する感情や記憶などの「目に見えない何か」を体験と称します。また、ソフトウェアなどのUIの影響を受けずに形成される体験についてもしっかりと熟慮する必要があります。もしも二つを併記したい場合には、「UIとその体験」と書くと収まりが良くなります。ご検討をよろしくお願いいたします。")
+            return
+
         found_keyword = None
         for keyword in KEYWORDS.keys():
             if keyword in message_content:
