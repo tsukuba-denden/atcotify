@@ -19,12 +19,12 @@ H:
 P_A:
   grade1:
   - name: Ohkate
-    rank: '14'
+    rank: '29'
   grade2:
   - name: Meis_Meiko
-    rank: '40'
+    rank: '51'
   - name: kinnara
-    rank: '50'
+    rank: '63'
   grade3: []
 P_H:
   grade1: []
@@ -33,12 +33,12 @@ P_H:
 L_A:
   grade1:
   - name: Ohkate
-    rank: '16'
+    rank: '29'
   grade2:
   - name: Meis_Meiko
-    rank: '42'
+    rank: '51'
   - name: kinnara
-    rank: '48'
+    rank: '63'
   grade3: []
 L_H:
   grade1: []
