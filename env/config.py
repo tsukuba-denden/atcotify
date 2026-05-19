@@ -41,3 +41,7 @@ class Config:
     @property
     def year(self) -> str:
         return str(self.config["YEAR"]["YEAR"])
+
+    @property
+    def school_admin_user_ids(self) -> str:
+        return str(self.config.get("SCHOOL_ADMIN", "USER_IDS", fallback=""))

@@ -1,11 +1,11 @@
-import os
-
 import discord
 from discord import app_commands
 
+from env.config import Config
+
 
 def _allowed_school_admin_user_ids() -> set[int]:
-    raw_user_ids = os.getenv("SCHOOL_ADMIN_USER_IDS", "")
+    raw_user_ids = Config().school_admin_user_ids
     user_ids = set()
     for raw_user_id in raw_user_ids.replace(" ", "").split(","):
         if raw_user_id.isdigit():
