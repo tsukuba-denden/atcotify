@@ -79,6 +79,18 @@ async def load_extension():
 
 @bot.tree.error
 async def on_error(interaction, error):
+    if isinstance(error, discord.app_commands.MissingPermissions):
+        missing_permissions = "、".join(error.missing_permissions)
+        message = (
+            "このコマンドを実行する権限がありません。"
+            f"必要な権限: {missing_permissions}"
+        )
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+        return
+
     await discord.app_commands.CommandTree.on_error(bot.tree, interaction, error)
     err = "".join(traceback.format_exception(error))
     embed = discord.Embed(description=f"```py\n{err}\n```"[:4095])
