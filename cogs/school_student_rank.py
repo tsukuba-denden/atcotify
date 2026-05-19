@@ -10,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 import calculate_hash
+from cogs.permission_checks import can_manage_school_settings
 from cogs.school_settings import (
     DEFAULT_SCHOOL_NAME,
     get_school_name_for_guild,
@@ -413,7 +414,7 @@ class SchoolStudentRank(commands.Cog):
         name="school_student_rank_set_ch",
         description="生徒順位通知チャンネルを設定します。",
     )
-    @app_commands.checks.has_permissions(administrator=True)
+    @can_manage_school_settings()
     async def school_student_rank_set_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ):
@@ -436,7 +437,7 @@ class SchoolStudentRank(commands.Cog):
         name="school_student_rank_unset_ch",
         description="生徒順位通知チャンネルを解除します。",
     )
-    @app_commands.checks.has_permissions(administrator=True)
+    @can_manage_school_settings()
     async def school_student_rank_unset_channel(self, interaction: discord.Interaction):
         if interaction.guild_id is None:
             await interaction.response.send_message("このコマンドはサーバー内で実行してください。")
@@ -463,7 +464,7 @@ class SchoolStudentRank(commands.Cog):
         name="tsukuba_student_rank---set_ch",
         description="筑波大学附属中学校の生徒の順位通知チャンネルを設定します。",
     )
-    @app_commands.checks.has_permissions(administrator=True)
+    @can_manage_school_settings()
     async def tsukuba_student_rank_set_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ):
@@ -473,7 +474,7 @@ class SchoolStudentRank(commands.Cog):
         name="tsukuba_student_rank---unset_ch",
         description="筑波大学附属中学校の生徒の順位通知チャンネルを解除します。",
     )
-    @app_commands.checks.has_permissions(administrator=True)
+    @can_manage_school_settings()
     async def tsukuba_student_rank_unset_channel(self, interaction: discord.Interaction):
         await self.school_student_rank_unset_channel.callback(self, interaction)
 

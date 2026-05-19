@@ -53,12 +53,12 @@ class Help(commands.Cog):
         )   
         embed.add_field(
             name="`/school_set school_name`",
-            value="このサーバーで表示・通知する学校名を設定します。管理者権限が必要です。",
+            value="このサーバーで表示・通知する学校名を設定します。管理者または許可ユーザーのみ実行できます。",
             inline=False,
         )
         embed.add_field(
             name="`/school_unset`",
-            value="このサーバーの学校名設定を削除し、デフォルトの筑波大学附属中学校に戻します。管理者権限が必要です。",
+            value="このサーバーの学校名設定を削除し、デフォルトの筑波大学附属中学校に戻します。管理者または許可ユーザーのみ実行できます。",
             inline=False,
         )
         embed.add_field(
@@ -73,12 +73,12 @@ class Help(commands.Cog):
         )
         embed.add_field(
             name="`/school_rank_set_ch` / `/school_rank_unset_ch`",
-            value="学校順位の定期通知チャンネルを設定・解除します。管理者権限が必要です。",
+            value="学校順位の定期通知チャンネルを設定・解除します。管理者または許可ユーザーのみ実行できます。",
             inline=False,
         )
         embed.add_field(
             name="`/school_student_rank_set_ch` / `/school_student_rank_unset_ch`",
-            value="生徒順位の定期通知チャンネルを設定・解除します。管理者権限が必要です。",
+            value="生徒順位の定期通知チャンネルを設定・解除します。管理者または許可ユーザーのみ実行できます。",
             inline=False,
         )
         embed.add_field(
