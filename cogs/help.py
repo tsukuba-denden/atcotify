@@ -52,8 +52,8 @@ class Help(commands.Cog):
             inline=False,
         )   
         embed.add_field(
-            name="`/school_set school_name`",
-            value="このサーバーで表示・通知する学校名を設定します。管理者または許可ユーザーのみ実行できます。",
+            name="`/school_set school_name school_type`",
+            value="このサーバーで表示・通知する学校名と中学/高校を設定します。管理者または許可ユーザーのみ実行できます。",
             inline=False,
         )
         embed.add_field(

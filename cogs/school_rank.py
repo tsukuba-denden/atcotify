@@ -13,11 +13,14 @@ import calculate_hash
 from cogs.permission_checks import can_manage_school_settings
 from cogs.school_settings import (
     DEFAULT_SCHOOL_NAME,
-    get_channel_id_for_guild,
+    DEFAULT_SCHOOL_TYPE,
+    SCHOOL_TYPE_LABELS,
     get_school_name_for_guild,
+    get_school_type_for_guild,
     iter_guild_settings,
+    normalize_school_type,
     set_channel_id_for_guild,
-    set_school_name_for_guild,
+    set_school_for_guild,
     unset_channel_id_for_guild,
     unset_school_name_for_guild,
 )
@@ -33,9 +36,7 @@ with open("asset/school_abbreviations.yaml", encoding="utf-8") as f:
 HTML_DIR = Path("html")
 SCHOOL_RANK_FILE = Path("asset/school_rank.yaml")
 LEGACY_TSUKUBA_RANK_FILE = Path("asset/tsukuba_rank.yaml")
-AJL_RANKING_BASE_URL = (
-    f"https://img.atcoder.jp/ajl{YEAR}{{}}/school_rankings_grades_1to3_{{}}.html"
-)
+AJL_RANKING_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/school_rankings_grades_{{}}_{{}}.html"
 CONTEST_TYPES = ("A", "H")
 
 
@@ -55,18 +56,24 @@ def default_school_rank_history() -> dict[str, dict[str, int | None]]:
 def ensure_school_rank_history(
     data: dict[str, Any],
     school_name: str,
+    school_type: str = DEFAULT_SCHOOL_TYPE,
 ) -> dict[str, dict[str, Any]]:
-    if school_name not in data or not isinstance(data[school_name], dict):
-        data[school_name] = default_school_rank_history()
+    history_key = school_history_key(school_name, school_type)
+    if history_key not in data or not isinstance(data[history_key], dict):
+        data[history_key] = default_school_rank_history()
 
     for contest_type in CONTEST_TYPES:
-        if contest_type not in data[school_name] or not isinstance(
-            data[school_name][contest_type], dict
+        if contest_type not in data[history_key] or not isinstance(
+            data[history_key][contest_type], dict
         ):
-            data[school_name][contest_type] = empty_rank_entry()
+            data[history_key][contest_type] = empty_rank_entry()
         for key, value in empty_rank_entry().items():
-            data[school_name][contest_type].setdefault(key, value)
-    return data[school_name]
+            data[history_key][contest_type].setdefault(key, value)
+    return data[history_key]
+
+
+def school_history_key(school_name: str, school_type: str) -> str:
+    return f"{normalize_school_type(school_type)}:{school_name}"
 
 
 def load_school_rank_history() -> dict[str, Any]:
@@ -76,13 +83,16 @@ def load_school_rank_history() -> dict[str, Any]:
     elif LEGACY_TSUKUBA_RANK_FILE.exists():
         with LEGACY_TSUKUBA_RANK_FILE.open("r", encoding="utf-8") as f:
             legacy_data = yaml.safe_load(f) or {}
-        data = {DEFAULT_SCHOOL_NAME: legacy_data}
+        data = {school_history_key(DEFAULT_SCHOOL_NAME, DEFAULT_SCHOOL_TYPE): legacy_data}
     else:
         data = {}
 
     if all(contest_type in data for contest_type in CONTEST_TYPES):
-        data = {DEFAULT_SCHOOL_NAME: data}
-    ensure_school_rank_history(data, DEFAULT_SCHOOL_NAME)
+        data = {school_history_key(DEFAULT_SCHOOL_NAME, DEFAULT_SCHOOL_TYPE): data}
+    for key in list(data.keys()):
+        if ":" not in str(key) and isinstance(data[key], dict):
+            data[school_history_key(str(key), DEFAULT_SCHOOL_TYPE)] = data.pop(key)
+    ensure_school_rank_history(data, DEFAULT_SCHOOL_NAME, DEFAULT_SCHOOL_TYPE)
     return data
 
 
@@ -96,24 +106,34 @@ def season_suffix() -> str:
     return "winter" if SEASON == "WINTER" else "summer"
 
 
-def html_file_path(contest_type: str) -> Path:
-    return HTML_DIR / f"ajl_ranking_{season_suffix()}_{contest_type}.html"
+def school_grade_range(school_type: str) -> str:
+    return "4to6" if normalize_school_type(school_type) == "high" else "1to3"
 
 
-def fetch_school_rank_tables() -> tuple[dict[str, pd.DataFrame], dict[str, bool]]:
+def html_file_path(contest_type: str, school_type: str) -> Path:
+    return (
+        HTML_DIR
+        / f"ajl_ranking_{season_suffix()}_{school_grade_range(school_type)}_{contest_type}.html"
+    )
+
+
+def fetch_school_rank_tables(
+    school_type: str,
+) -> tuple[dict[str, pd.DataFrame], dict[str, bool]]:
     HTML_DIR.mkdir(parents=True, exist_ok=True)
     frames = {}
     html_changed = {}
+    grade_range = school_grade_range(school_type)
 
     for contest_type in CONTEST_TYPES:
-        path = html_file_path(contest_type)
+        path = html_file_path(contest_type, school_type)
         try:
             previous_hash = calculate_hash.calculate_hash(str(path))
         except FileNotFoundError:
             previous_hash = None
 
         response = requests.get(
-            AJL_RANKING_BASE_URL.format(season_suffix(), contest_type)
+            AJL_RANKING_BASE_URL.format(season_suffix(), grade_range, contest_type)
         )
         response.raise_for_status()
         response.encoding = "utf-8"
@@ -132,13 +152,15 @@ def fetch_school_rank_tables() -> tuple[dict[str, pd.DataFrame], dict[str, bool]
 
 def build_school_rank_embeds(
     school_name: str,
+    school_type: str,
     frames: dict[str, pd.DataFrame],
     html_changed: dict[str, bool],
     history: dict[str, Any],
 ) -> tuple[list[discord.Embed], bool, bool]:
     embeds = []
     changed = False
-    school_history = ensure_school_rank_history(history, school_name)
+    school_type = normalize_school_type(school_type)
+    school_history = ensure_school_rank_history(history, school_name, school_type)
 
     for contest_type in CONTEST_TYPES:
         df = frames[contest_type]
@@ -187,7 +209,7 @@ def build_school_rank_embeds(
 
         embed_url = (
             f"https://img.atcoder.jp/ajl{YEAR}{season_suffix()}/"
-            f"school_rankings_grades_1to3_{contest_type}.html"
+            f"school_rankings_grades_{school_grade_range(school_type)}_{contest_type}.html"
         )
         embed = discord.Embed(
             title="アルゴリズム" if contest_type == "A" else "ヒューリスティック",
@@ -195,7 +217,9 @@ def build_school_rank_embeds(
             color=discord.Color.blue(),
             url=embed_url,
         )
-        embed.set_author(name=f"{school_name} のAJL学校順位")
+        embed.set_author(
+            name=f"{school_name}（{SCHOOL_TYPE_LABELS[school_type]}）のAJL学校順位"
+        )
         embeds.append(embed)
 
         if html_changed[contest_type]:
@@ -219,17 +243,18 @@ class SchoolRank(commands.Cog):
     async def get_school_rank_data(
         self,
         school_name: str,
+        school_type: str = DEFAULT_SCHOOL_TYPE,
         frames: dict[str, pd.DataFrame] | None = None,
         html_changed: dict[str, bool] | None = None,
         history: dict[str, Any] | None = None,
     ) -> tuple[list[discord.Embed], bool]:
         if frames is None or html_changed is None:
-            frames, html_changed = fetch_school_rank_tables()
+            frames, html_changed = fetch_school_rank_tables(school_type)
         if history is None:
             history = load_school_rank_history()
 
         embeds, found, changed = build_school_rank_embeds(
-            school_name, frames, html_changed, history
+            school_name, school_type, frames, html_changed, history
         )
         if changed:
             save_school_rank_history(history)
@@ -237,16 +262,22 @@ class SchoolRank(commands.Cog):
             return [], changed
         return embeds, changed
 
-    async def send_school_rank(self, interaction: discord.Interaction, school_name: str):
+    async def send_school_rank(
+        self,
+        interaction: discord.Interaction,
+        school_name: str,
+        school_type: str,
+    ):
         try:
             await interaction.response.defer()
-            embeds, _ = await self.get_school_rank_data(school_name)
+            embeds, _ = await self.get_school_rank_data(school_name, school_type)
 
             if embeds:
                 await interaction.followup.send(embeds=embeds)
             else:
                 await interaction.followup.send(
-                    f"{school_name} のデータが見つかりませんでした。"
+                    f"{school_name}（{SCHOOL_TYPE_LABELS[normalize_school_type(school_type)]}）"
+                    "のデータが見つかりませんでした。"
                     "学校名がAJL上の表記と完全一致しているか確認してください。"
                 )
         except requests.RequestException as e:
@@ -259,16 +290,31 @@ class SchoolRank(commands.Cog):
             await interaction.followup.send("予期せぬエラーが発生しました。")
 
     @app_commands.command(name="school_set", description="このサーバーの学校名を設定します。")
+    @app_commands.choices(
+        school_type=[
+            app_commands.Choice(name="中学", value="junior_high"),
+            app_commands.Choice(name="高校", value="high"),
+        ]
+    )
     @can_manage_school_settings()
-    async def school_set(self, interaction: discord.Interaction, school_name: str):
+    async def school_set(
+        self,
+        interaction: discord.Interaction,
+        school_name: str,
+        school_type: str = DEFAULT_SCHOOL_TYPE,
+    ):
         if interaction.guild_id is None:
             await interaction.response.send_message("このコマンドはサーバー内で実行してください。")
             return
 
-        set_school_name_for_guild(interaction.guild_id, school_name)
+        school_type = normalize_school_type(school_type)
+        set_school_for_guild(interaction.guild_id, school_name, school_type)
         embed = discord.Embed(
             title="設定完了",
-            description=f"このサーバーの学校名を {school_name.strip()} に設定しました。",
+            description=(
+                f"このサーバーの学校を {school_name.strip()}"
+                f"（{SCHOOL_TYPE_LABELS[school_type]}）に設定しました。"
+            ),
             color=discord.Color.green(),
         )
         await interaction.response.send_message(embed=embed)
@@ -286,7 +332,10 @@ class SchoolRank(commands.Cog):
         unset_school_name_for_guild(interaction.guild_id)
         embed = discord.Embed(
             title="設定解除",
-            description=f"このサーバーの学校名設定を削除しました。デフォルトは {DEFAULT_SCHOOL_NAME} です。",
+            description=(
+                "このサーバーの学校設定を削除しました。"
+                f"デフォルトは {DEFAULT_SCHOOL_NAME}（{SCHOOL_TYPE_LABELS[DEFAULT_SCHOOL_TYPE]}）です。"
+            ),
             color=discord.Color.green(),
         )
         await interaction.response.send_message(embed=embed)
@@ -297,7 +346,9 @@ class SchoolRank(commands.Cog):
     )
     async def school_rank(self, interaction: discord.Interaction):
         await self.send_school_rank(
-            interaction, get_school_name_for_guild(interaction.guild_id)
+            interaction,
+            get_school_name_for_guild(interaction.guild_id),
+            get_school_type_for_guild(interaction.guild_id),
         )
 
     @app_commands.command(
@@ -305,17 +356,12 @@ class SchoolRank(commands.Cog):
         description="現在のAJLの筑波大学附属中学校の順位を表示します。",
     )
     async def tsukuba_rank(self, interaction: discord.Interaction):
-        await self.send_school_rank(interaction, DEFAULT_SCHOOL_NAME)
+        await self.send_school_rank(interaction, DEFAULT_SCHOOL_NAME, DEFAULT_SCHOOL_TYPE)
 
     @tasks.loop(minutes=15)
     async def check_school_rank_loop(self):
         print("Checking School Rank...")
         try:
-            frames, html_changed = fetch_school_rank_tables()
-            if not any(html_changed.values()):
-                print("No changes in School Rank.")
-                return
-
             history = load_school_rank_history()
             target_guilds = []
             for guild_id, guild_settings in iter_guild_settings():
@@ -324,29 +370,50 @@ class SchoolRank(commands.Cog):
                 )
                 if channel_id:
                     target_guilds.append(
-                        (guild_id, str(channel_id), get_school_name_for_guild(guild_id))
+                        (
+                            guild_id,
+                            str(channel_id),
+                            get_school_name_for_guild(guild_id),
+                            get_school_type_for_guild(guild_id),
+                        )
                     )
+
+            tables_by_type = {}
+            for school_type in sorted({school_type for _, _, _, school_type in target_guilds}):
+                frames, html_changed = fetch_school_rank_tables(school_type)
+                tables_by_type[school_type] = (frames, html_changed)
+
+            if not any(
+                any(html_changed.values()) for _, html_changed in tables_by_type.values()
+            ):
+                print("No changes in School Rank.")
+                return
 
             embeds_by_school = {}
             changed_by_school = {}
-            for school_name in sorted({school for _, _, school in target_guilds}):
+            for school_name, school_type in sorted(
+                {(school, school_type) for _, _, school, school_type in target_guilds}
+            ):
+                frames, html_changed = tables_by_type[school_type]
                 embeds, found, changed = build_school_rank_embeds(
-                    school_name, frames, html_changed, history
+                    school_name, school_type, frames, html_changed, history
                 )
-                embeds_by_school[school_name] = embeds if found else []
-                changed_by_school[school_name] = changed
+                school_key = (school_name, school_type)
+                embeds_by_school[school_key] = embeds if found else []
+                changed_by_school[school_key] = changed
 
             if any(changed_by_school.values()):
                 save_school_rank_history(history)
 
-            for guild_id, channel_id, school_name in target_guilds:
+            for guild_id, channel_id, school_name, school_type in target_guilds:
                 channel = self.bot.get_channel(int(channel_id))
                 if channel is None:
                     print(f"Channel with ID {channel_id} not found in guild {guild_id}.")
                     continue
 
-                embeds = embeds_by_school.get(school_name, [])
-                if embeds and changed_by_school.get(school_name, False):
+                school_key = (school_name, school_type)
+                embeds = embeds_by_school.get(school_key, [])
+                if embeds and changed_by_school.get(school_key, False):
                     await channel.send(embeds=embeds)
                     print(f"School Rank updated and sent to guild {guild_id}.")
                 elif not embeds:
@@ -374,9 +441,13 @@ class SchoolRank(commands.Cog):
             interaction.guild_id, "school_rank_channel_id", channel.id
         )
         school_name = get_school_name_for_guild(interaction.guild_id)
+        school_type = get_school_type_for_guild(interaction.guild_id)
         embed = discord.Embed(
             title="設定完了",
-            description=f"{school_name} の順位通知チャンネルを {channel.mention} に設定しました。",
+            description=(
+                f"{school_name}（{SCHOOL_TYPE_LABELS[school_type]}）"
+                f"の順位通知チャンネルを {channel.mention} に設定しました。"
+            ),
             color=discord.Color.green(),
         )
         await interaction.response.send_message(embed=embed)
