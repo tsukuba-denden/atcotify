@@ -6,8 +6,8 @@ from discord.ext import commands
 from env.config import Config
 
 INITIAL_EXTENSIONS = [
-    "cogs.tsukuba_rank",
-    "cogs.tsukuba_student_rank",
+    "cogs.school_rank",
+    "cogs.school_student_rank",
     "cogs.help",
     "cogs.reminder",
     "cogs.result",

@@ -11,7 +11,6 @@ class Help(commands.Cog):
     async def help_command(self, interaction: discord.Interaction):
         embed = discord.Embed(title="コマンド一覧", color=discord.Color.blue())
 
-        
         embed.add_field(
             name="`/help`",
             value="今まさにあなたが使ったヘルプコマンドです",
@@ -53,16 +52,40 @@ class Help(commands.Cog):
             inline=False,
         )   
         embed.add_field(
-            name="`/tsukuba_rank`",
-            value="[AJL](https://info.atcoder.jp/utilize/school/ajl)における筑附の順位やスコア・一つ上の学校との比較を表示します",
+            name="`/school_set school_name`",
+            value="このサーバーで表示・通知する学校名を設定します。管理者権限が必要です。",
             inline=False,
         )
         embed.add_field(
-            name="`/tsukuba_student_rank`",
-            value="AJLにおける筑附の生徒の順位・1つ上の順位の人との比較・新規参加者を表示します",
+            name="`/school_unset`",
+            value="このサーバーの学校名設定を削除し、デフォルトの筑波大学附属中学校に戻します。管理者権限が必要です。",
             inline=False,
         )
-        
+        embed.add_field(
+            name="`/school_rank`",
+            value="[AJL](https://info.atcoder.jp/utilize/school/ajl)における、このサーバーに設定された学校の順位やスコア・一つ上の学校との比較を表示します。",
+            inline=False,
+        )
+        embed.add_field(
+            name="`/school_student_rank`",
+            value="AJLにおける、このサーバーに設定された学校の生徒順位・1つ上の順位の人との比較・新規参加者を表示します。",
+            inline=False,
+        )
+        embed.add_field(
+            name="`/school_rank_set_ch` / `/school_rank_unset_ch`",
+            value="学校順位の定期通知チャンネルを設定・解除します。管理者権限が必要です。",
+            inline=False,
+        )
+        embed.add_field(
+            name="`/school_student_rank_set_ch` / `/school_student_rank_unset_ch`",
+            value="生徒順位の定期通知チャンネルを設定・解除します。管理者権限が必要です。",
+            inline=False,
+        )
+        embed.add_field(
+            name="筑波用の旧コマンド",
+            value="`/tsukuba_rank`、`/tsukuba_student_rank`、`/tsukuba_rank---set_ch`、`/tsukuba_rank---unset_ch`、`/tsukuba_student_rank---set_ch`、`/tsukuba_student_rank---unset_ch` は互換用に残っています。",
+            inline=False,
+        )
 
         await interaction.response.send_message(embed=embed, ephemeral=False)
 
