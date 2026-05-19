@@ -40,6 +40,17 @@ CONTEST_TYPES = ("A", "H")
 RANK_KEYS = ("A", "H", "P_A", "P_H", "L_A", "L_H")
 
 
+def abbreviate_school_name(school_name: Any) -> Any:
+    if school_name in school_abbreviations:
+        return school_abbreviations[school_name]
+    if isinstance(school_name, str):
+        if school_name.endswith("高等専門学校"):
+            return school_name[:-6] + "高専"
+        if school_name.endswith("中学校"):
+            return school_name[:-3]
+    return school_name
+
+
 def season_suffix() -> str:
     return "winter" if SEASON == "WINTER" else "summer"
 
@@ -206,11 +217,7 @@ def get_rank_info(
 
     if student_index > 0:
         above_row = df.iloc[student_index - 1]
-        above_school = above_row["学校名"]
-        if above_school in school_abbreviations:
-            above_school = school_abbreviations[above_school]
-        elif isinstance(above_school, str) and above_school.endswith("中学校"):
-            above_school = above_school[:-3]
+        above_school = abbreviate_school_name(above_row["学校名"])
         above_user = above_row["ユーザID"]
         score_diff = int(above_row["スコア"]) - int(
             df[df["ユーザID"] == user_id]["スコア"].iloc[0]

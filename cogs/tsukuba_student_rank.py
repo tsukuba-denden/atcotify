@@ -19,7 +19,19 @@ YEAR = config.year
 
 # 学校名略称を読み込む
 with open("asset/school_abbreviations.yaml", encoding="utf-8") as f:
-    school_abbreviations = yaml.safe_load(f)
+    school_abbreviations = yaml.safe_load(f) or {}
+
+
+def abbreviate_school_name(school_name):
+    if school_name in school_abbreviations:
+        return school_abbreviations[school_name]
+    if isinstance(school_name, str):
+        if school_name.endswith("高等専門学校"):
+            return school_name[:-6] + "高専"
+        if school_name.endswith("中学校"):
+            return school_name[:-3]
+    return school_name
+
 
 # 筑波大学附属中学校の生徒の前回の順位を保存するファイル名
 TSUKUBA_STUDENT_RANK_FILE = "./asset/tsukuba_student_rank.yaml"
@@ -143,11 +155,7 @@ class Tsukuba_student_rank(commands.Cog):
 
         if tsukuba_row > 0:
             above_row = df.iloc[tsukuba_row - 1]
-            above_school = above_row["学校名"]
-            if above_school in school_abbreviations:
-                above_school = school_abbreviations[above_school]
-            elif above_school.endswith("中学校"):
-                above_school = above_school[:-3]
+            above_school = abbreviate_school_name(above_row["学校名"])
             above_user = above_row["ユーザID"]
             score_diff = int(above_row["スコア"]) - int(
                 df[df["ユーザID"] == user_id]["スコア"].iloc[0]

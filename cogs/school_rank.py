@@ -40,6 +40,14 @@ AJL_RANKING_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/school_rankings_gr
 CONTEST_TYPES = ("A", "H")
 
 
+def abbreviate_school_name(school_name: Any) -> Any:
+    if school_name in school_abbreviations:
+        return school_abbreviations[school_name]
+    if isinstance(school_name, str) and school_name.endswith("高等専門学校"):
+        return school_name[:-6] + "高専"
+    return school_name
+
+
 def empty_rank_entry() -> dict[str, int | None]:
     return {
         "previous_rank": None,
@@ -190,8 +198,7 @@ def build_school_rank_embeds(
 
         if school_rank_index > 0:
             above_row = df.iloc[school_rank_index - 1]
-            above_school = above_row["学校名"]
-            above_school_abbr = school_abbreviations.get(above_school, above_school)
+            above_school_abbr = abbreviate_school_name(above_row["学校名"])
             above_score = int(above_row["スコア"])
             score_diff = above_score - current_score
             description += f"> **{above_school_abbr}**まであと**{score_diff}**点！"

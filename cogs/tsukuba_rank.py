@@ -22,7 +22,16 @@ YEAR = config.year
 
 # 学校名略称yamlを読み込む
 with open("asset/school_abbreviations.yaml", encoding="utf-8") as f:
-    school_abbreviations = yaml.safe_load(f)
+    school_abbreviations = yaml.safe_load(f) or {}
+
+
+def abbreviate_school_name(school_name):
+    if school_name in school_abbreviations:
+        return school_abbreviations[school_name]
+    if isinstance(school_name, str) and school_name.endswith("高等専門学校"):
+        return school_name[:-6] + "高専"
+    return school_name
+
 
 # HTMLファイル保存ディレクトリを '../html/' に設定
 html_dir = "html/"
@@ -152,10 +161,7 @@ class Tsukuba_rank(commands.Cog):
                 # 上の学校とのスコア差を計算
                 if tsukuba_rank_index > 0: # 変数名を変更
                     above_row = df.iloc[tsukuba_rank_index - 1] # 変数名を変更
-                    above_school = above_row["学校名"]
-                    above_school_abbr = school_abbreviations.get(
-                        above_school, above_school
-                    )
+                    above_school_abbr = abbreviate_school_name(above_row["学校名"])
                     above_score = int(above_row["スコア"])
                     score_diff = above_score - current_score
                     description += (
