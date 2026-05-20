@@ -38,6 +38,8 @@ GRADE_A_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_A_
 GRADE_H_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_H_score.html"
 CONTEST_TYPES = ("A", "H")
 RANK_KEYS = ("A", "H", "P_A", "P_H", "L_A", "L_H")
+SCHOOL_TYPES = ("junior_high", "high")
+MAX_SEARCH_RESULT_EMBEDS = 10
 
 
 def abbreviate_school_name(school_name: Any) -> Any:
@@ -116,6 +118,10 @@ def grade_numbers(school_type: str) -> range:
     return range(4, 7) if normalize_school_type(school_type) == "high" else range(1, 4)
 
 
+def school_grade_range(school_type: str) -> str:
+    return "4to6" if normalize_school_type(school_type) == "high" else "1to3"
+
+
 def grade_slot(grade: int, school_type: str) -> int:
     return grade - 3 if normalize_school_type(school_type) == "high" else grade
 
@@ -171,6 +177,37 @@ def fetch_student_rank_tables(
             frames[contest_type][grade] = df[df["学校名"] != "学校名"]
 
     return frames, html_changed
+
+
+def find_matching_schools(
+    query: str,
+    tables_by_type: dict[str, tuple[dict[str, dict[int, pd.DataFrame]], dict[str, bool]]],
+) -> list[tuple[str, str]]:
+    exact_matches = []
+    partial_matches = []
+    seen = set()
+    query = query.strip()
+    query_lower = query.lower()
+
+    for school_type in SCHOOL_TYPES:
+        frames, _ = tables_by_type[school_type]
+        for grade_frames in frames.values():
+            for df in grade_frames.values():
+                if df.empty:
+                    continue
+                for raw_school_name in df["学校名"].dropna().unique():
+                    school_name = str(raw_school_name).strip()
+                    school_key = (school_name, school_type)
+                    if school_key in seen:
+                        continue
+                    seen.add(school_key)
+
+                    if school_name == query:
+                        exact_matches.append(school_key)
+                    elif query_lower in school_name.lower():
+                        partial_matches.append(school_key)
+
+    return exact_matches or partial_matches
 
 
 def get_student_rank(df: pd.DataFrame, school_name: str) -> list[tuple[str, str]]:
@@ -307,7 +344,7 @@ def build_school_student_rank_embeds(
 
         url = (
             f"https://img.atcoder.jp/ajl{YEAR}{season_suffix()}/"
-            f"school_rankings_grades_1to3_{contest_type}.html"
+            f"school_rankings_grades_{school_grade_range(school_type)}_{contest_type}.html"
         )
         contest_label = "アルゴリズム" if contest_type == "A" else "ヒューリスティック"
         embed = discord.Embed(
@@ -392,11 +429,81 @@ class SchoolStudentRank(commands.Cog):
             print(f"An unexpected error occurred in student rank: {e}")
             await interaction.followup.send("予期せぬエラーが発生しました。")
 
+    async def search_and_send_school_student_rank(
+        self,
+        interaction: discord.Interaction,
+        query: str,
+    ):
+        await interaction.response.defer()
+        try:
+            tables_by_type = {
+                school_type: fetch_student_rank_tables(school_type)
+                for school_type in SCHOOL_TYPES
+            }
+            matches = find_matching_schools(query, tables_by_type)
+            if not matches:
+                await interaction.followup.send(
+                    f"「{query}」に一致する生徒データが見つかりませんでした。"
+                )
+                return
+
+            history = load_school_student_rank_history()
+            embeds = []
+            changed = False
+            omitted_count = 0
+            for school_name, school_type in matches:
+                frames, html_changed = tables_by_type[school_type]
+                school_embeds, found, school_changed = build_school_student_rank_embeds(
+                    school_name, school_type, frames, html_changed, history
+                )
+                if not found:
+                    continue
+                if len(embeds) + len(school_embeds) > MAX_SEARCH_RESULT_EMBEDS:
+                    omitted_count += 1
+                    continue
+                embeds.extend(school_embeds)
+                changed = changed or school_changed
+
+            if changed:
+                save_school_student_rank_history(history)
+
+            if not embeds:
+                await interaction.followup.send(
+                    f"「{query}」に一致する生徒データが見つかりませんでした。"
+                )
+                return
+
+            content = None
+            if omitted_count:
+                content = f"候補が多いため、追加の{omitted_count}校は省略しました。"
+            await interaction.followup.send(content=content, embeds=embeds)
+        except requests.RequestException as e:
+            print(f"Error fetching student data: {e}")
+            await interaction.followup.send(
+                "生徒データの取得中にエラーが発生しました。しばらくしてからもう一度お試しください。"
+            )
+        except Exception as e:
+            print(f"An unexpected error occurred in student rank: {e}")
+            await interaction.followup.send("予期せぬエラーが発生しました。")
+
     @app_commands.command(
         name="school_student_rank",
-        description="このサーバーに設定された学校のAJL生徒順位を表示します。",
+        description="AJL生徒順位を表示します。学校名を指定しない場合はサーバー設定を使います。",
     )
-    async def school_student_rank(self, interaction: discord.Interaction):
+    @app_commands.describe(
+        school_name="表示する学校名。未指定の場合はこのサーバーに設定された学校を表示します。"
+    )
+    async def school_student_rank(
+        self,
+        interaction: discord.Interaction,
+        school_name: str | None = None,
+    ):
+        if school_name and school_name.strip():
+            await self.search_and_send_school_student_rank(
+                interaction, school_name.strip()
+            )
+            return
+
         await self.send_school_student_rank(
             interaction,
             get_school_name_for_guild(interaction.guild_id),

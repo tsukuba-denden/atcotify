@@ -62,13 +62,13 @@ class Help(commands.Cog):
             inline=False,
         )
         embed.add_field(
-            name="`/school_rank`",
-            value="[AJL](https://info.atcoder.jp/utilize/school/ajl)における、このサーバーに設定された学校の順位やスコア・一つ上の学校との比較を表示します。",
+            name="`/school_rank [school_name]`",
+            value="[AJL](https://info.atcoder.jp/utilize/school/ajl)における、指定した学校またはこのサーバーに設定された学校の順位やスコア・一つ上の学校との比較を表示します。",
             inline=False,
         )
         embed.add_field(
-            name="`/school_student_rank`",
-            value="AJLにおける、このサーバーに設定された学校の生徒順位・1つ上の順位の人との比較・新規参加者を表示します。",
+            name="`/school_student_rank [school_name]`",
+            value="AJLにおける、指定した学校またはこのサーバーに設定された学校の生徒順位・1つ上の順位の人との比較・新規参加者を表示します。",
             inline=False,
         )
         embed.add_field(
