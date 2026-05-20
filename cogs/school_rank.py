@@ -14,7 +14,7 @@ from cogs.permission_checks import can_manage_school_settings
 from cogs.school_settings import (
     DEFAULT_SCHOOL_NAME,
     DEFAULT_SCHOOL_TYPE,
-    SCHOOL_TYPE_LABELS,
+    format_school_label,
     get_school_name_for_guild,
     get_school_type_for_guild,
     iter_guild_settings,
@@ -218,15 +218,14 @@ def build_school_rank_embeds(
             f"https://img.atcoder.jp/ajl{YEAR}{season_suffix()}/"
             f"school_rankings_grades_{school_grade_range(school_type)}_{contest_type}.html"
         )
+        contest_label = "アルゴリズム" if contest_type == "A" else "ヒューリスティック"
         embed = discord.Embed(
-            title="アルゴリズム" if contest_type == "A" else "ヒューリスティック",
+            title=f"{contest_label}",
             description=description,
             color=discord.Color.blue(),
             url=embed_url,
         )
-        embed.set_author(
-            name=f"{school_name}（{SCHOOL_TYPE_LABELS[school_type]}）のAJL学校順位"
-        )
+        embed.set_author(name=format_school_label(school_name, school_type))
         embeds.append(embed)
 
         if html_changed[contest_type]:
@@ -283,7 +282,7 @@ class SchoolRank(commands.Cog):
                 await interaction.followup.send(embeds=embeds)
             else:
                 await interaction.followup.send(
-                    f"{school_name}（{SCHOOL_TYPE_LABELS[normalize_school_type(school_type)]}）"
+                    f"{format_school_label(school_name, school_type)}"
                     "のデータが見つかりませんでした。"
                     "学校名がAJL上の表記と完全一致しているか確認してください。"
                 )
@@ -319,8 +318,8 @@ class SchoolRank(commands.Cog):
         embed = discord.Embed(
             title="設定完了",
             description=(
-                f"このサーバーの学校を {school_name.strip()}"
-                f"（{SCHOOL_TYPE_LABELS[school_type]}）に設定しました。"
+                f"このサーバーの学校を "
+                f"{format_school_label(school_name, school_type)}に設定しました。"
             ),
             color=discord.Color.green(),
         )
@@ -341,7 +340,8 @@ class SchoolRank(commands.Cog):
             title="設定解除",
             description=(
                 "このサーバーの学校設定を削除しました。"
-                f"デフォルトは {DEFAULT_SCHOOL_NAME}（{SCHOOL_TYPE_LABELS[DEFAULT_SCHOOL_TYPE]}）です。"
+                f"デフォルトは "
+                f"{format_school_label(DEFAULT_SCHOOL_NAME, DEFAULT_SCHOOL_TYPE)}です。"
             ),
             color=discord.Color.green(),
         )
@@ -452,7 +452,7 @@ class SchoolRank(commands.Cog):
         embed = discord.Embed(
             title="設定完了",
             description=(
-                f"{school_name}（{SCHOOL_TYPE_LABELS[school_type]}）"
+                f"{format_school_label(school_name, school_type)}"
                 f"の順位通知チャンネルを {channel.mention} に設定しました。"
             ),
             color=discord.Color.green(),

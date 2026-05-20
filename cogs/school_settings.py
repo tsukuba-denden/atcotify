@@ -10,6 +10,10 @@ SCHOOL_TYPE_LABELS = {
     "junior_high": "中学",
     "high": "高校",
 }
+SCHOOL_TYPE_NAME_SUFFIXES = {
+    "junior_high": ("中学校", "中学"),
+    "high": ("高等学校", "高校"),
+}
 BOT_SETTINGS_FILE = Path("bot_settings.json")
 
 
@@ -69,6 +73,14 @@ def normalize_school_type(school_type: str | None) -> str:
     if school_type in {"high", "高校", "高等学校"}:
         return "high"
     return DEFAULT_SCHOOL_TYPE
+
+
+def format_school_label(school_name: str, school_type: str | None) -> str:
+    school_name = school_name.strip()
+    school_type = normalize_school_type(school_type)
+    if school_name.endswith(SCHOOL_TYPE_NAME_SUFFIXES[school_type]):
+        return school_name
+    return f"{school_name}（{SCHOOL_TYPE_LABELS[school_type]}）"
 
 
 def get_school_type_for_guild(guild_id: int | str | None) -> str:

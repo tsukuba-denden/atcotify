@@ -14,7 +14,7 @@ from cogs.permission_checks import can_manage_school_settings
 from cogs.school_settings import (
     DEFAULT_SCHOOL_NAME,
     DEFAULT_SCHOOL_TYPE,
-    SCHOOL_TYPE_LABELS,
+    format_school_label,
     get_school_name_for_guild,
     get_school_type_for_guild,
     iter_guild_settings,
@@ -309,15 +309,14 @@ def build_school_student_rank_embeds(
             f"https://img.atcoder.jp/ajl{YEAR}{season_suffix()}/"
             f"school_rankings_grades_1to3_{contest_type}.html"
         )
+        contest_label = "アルゴリズム" if contest_type == "A" else "ヒューリスティック"
         embed = discord.Embed(
-            title="アルゴリズム" if contest_type == "A" else "ヒューリスティック",
+            title=f"{contest_label}",
             description=description,
             color=discord.Color.blue(),
             url=url,
         )
-        embed.set_author(
-            name=f"{school_name}（{SCHOOL_TYPE_LABELS[school_type]}）のAJL生徒順位"
-        )
+        embed.set_author(name=format_school_label(school_name, school_type))
         embeds.append(embed)
 
     for contest_type in CONTEST_TYPES:
@@ -380,7 +379,7 @@ class SchoolStudentRank(commands.Cog):
                 await interaction.followup.send(embeds=embeds)
             else:
                 await interaction.followup.send(
-                    f"{school_name}（{SCHOOL_TYPE_LABELS[normalize_school_type(school_type)]}）"
+                    f"{format_school_label(school_name, school_type)}"
                     "の生徒データが見つかりませんでした。"
                     "学校名がAJL上の表記と完全一致しているか確認してください。"
                 )
@@ -506,7 +505,7 @@ class SchoolStudentRank(commands.Cog):
         embed = discord.Embed(
             title="設定完了",
             description=(
-                f"{school_name}（{SCHOOL_TYPE_LABELS[school_type]}）"
+                f"{format_school_label(school_name, school_type)}"
                 f"の生徒順位通知チャンネルを {channel.mention} に設定しました。"
             ),
             color=discord.Color.green(),
