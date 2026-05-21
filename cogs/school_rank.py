@@ -51,6 +51,8 @@ def abbreviate_school_name(school_name: Any) -> Any:
             return school_name[:-6] + "高専"
         if school_name.endswith("高等学校"):
             return school_name[:-4] + "高校"
+        if school_name.endswith("中学校"):
+            return school_name[:-3]
     return school_name
 
 
