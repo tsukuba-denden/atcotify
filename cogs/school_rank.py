@@ -43,11 +43,28 @@ MAX_SEARCH_RESULT_EMBEDS = 10
 
 
 def abbreviate_school_name(school_name: Any) -> Any:
-    if school_name in school_abbreviations:
-        return school_abbreviations[school_name]
-    if isinstance(school_name, str) and school_name.endswith("高等専門学校"):
-        return school_name[:-6] + "高専"
+    if isinstance(school_name, str):
+        for full_name, abbreviation in school_abbreviations.items():
+            if str(full_name).strip() == school_name.strip():
+                return abbreviation
+        if school_name.endswith("高等専門学校"):
+            return school_name[:-6] + "高専"
+        if school_name.endswith("高等学校"):
+            return school_name[:-4] + "高校"
     return school_name
+
+
+def school_search_texts(school_name: str) -> set[str]:
+    texts = {school_name}
+    abbreviated = abbreviate_school_name(school_name)
+    if isinstance(abbreviated, str):
+        texts.add(abbreviated.strip())
+
+    for full_name, abbreviation in school_abbreviations.items():
+        if str(full_name).strip() == school_name:
+            texts.add(str(abbreviation).strip())
+
+    return {text for text in texts if text}
 
 
 def empty_rank_entry() -> dict[str, int | None]:
@@ -179,10 +196,11 @@ def find_matching_schools(
                 if school_key in seen:
                     continue
                 seen.add(school_key)
+                search_texts = school_search_texts(school_name)
 
-                if school_name == query:
+                if query in search_texts:
                     exact_matches.append(school_key)
-                elif query_lower in school_name.lower():
+                elif any(query_lower in text.lower() for text in search_texts):
                     partial_matches.append(school_key)
 
     return exact_matches or partial_matches

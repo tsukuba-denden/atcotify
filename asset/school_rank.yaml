@@ -9,3 +9,36 @@ junior_high:筑波大学附属中学校:
     previous_score: 20171
     last_rank: 23
     last_score: 27209
+junior_high:開成中学校:
+  A:
+    previous_rank: null
+    previous_score: null
+    last_rank: null
+    last_score: null
+  H:
+    previous_rank: null
+    previous_score: null
+    last_rank: null
+    last_score: null
+high:市立札幌開成中等教育学校:
+  A:
+    previous_rank: null
+    previous_score: null
+    last_rank: 14
+    last_score: 275150
+  H:
+    previous_rank: null
+    previous_score: null
+    last_rank: 10
+    last_score: 125503
+high:開成高等学校:
+  A:
+    previous_rank: null
+    previous_score: null
+    last_rank: 21
+    last_score: 199522
+  H:
+    previous_rank: null
+    previous_score: null
+    last_rank: null
+    last_score: null
