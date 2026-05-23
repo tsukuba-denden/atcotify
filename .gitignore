@@ -1,5 +1,6 @@
 *.exe
 pdf_and_png/
+font_cache/
 __pycache__/
 *.out
 *.json

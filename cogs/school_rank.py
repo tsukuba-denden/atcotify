@@ -1,6 +1,10 @@
-from io import StringIO
+from dataclasses import dataclass
+import colorsys
+import hashlib
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any
+import zipfile
 
 import discord
 import pandas as pd
@@ -8,6 +12,7 @@ import requests
 import yaml
 from discord import app_commands
 from discord.ext import commands, tasks
+from PIL import Image, ImageDraw, ImageFont
 
 import calculate_hash
 from cogs.permission_checks import can_manage_school_settings
@@ -37,9 +42,51 @@ HTML_DIR = Path("html")
 SCHOOL_RANK_FILE = Path("asset/school_rank.yaml")
 LEGACY_TSUKUBA_RANK_FILE = Path("asset/tsukuba_rank.yaml")
 AJL_RANKING_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/school_rankings_grades_{{}}_{{}}.html"
+AJL_PERSONAL_RANKING_BASE_URL = (
+    f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_{{}}_score.html"
+)
 CONTEST_TYPES = ("A", "H")
 SCHOOL_TYPES = ("junior_high", "high")
 MAX_SEARCH_RESULT_EMBEDS = 10
+CONTEST_LABELS = {"A": "アルゴリズム", "H": "ヒューリスティック"}
+CONTEST_DETAIL_LIMITS = {"A": 6, "H": 4}
+META_COLUMNS = {"順位", "ユーザID", "学校名", "都道府県", "学年", "スコア"}
+USER_RATING_CACHE: dict[str, int | None] = {}
+LINE_SEED_JP_DOWNLOAD_URL = "https://seed.line.me/src/images/fonts/LINE_Seed_JP.zip"
+LINE_SEED_JP_FONT_DIR = Path("font_cache/line_seed_jp")
+LINE_SEED_JP_FONT_NAMES = (
+    "LINESeedJP_OTF_Bd.otf",
+    "LINESeedJP_OTF_Rg.otf",
+    "LINESeedJP_TTF_Bd.ttf",
+    "LINESeedJP_TTF_Rg.ttf",
+)
+LINE_SEED_JP_DOWNLOAD_ATTEMPTED = False
+
+
+@dataclass(frozen=True)
+class SchoolRankImage:
+    filename: str
+    data: bytes
+
+
+@dataclass(frozen=True)
+class SchoolRankMessagePart:
+    embed: discord.Embed
+    image: SchoolRankImage | None = None
+
+
+@dataclass(frozen=True)
+class ContestScore:
+    contest_id: str
+    score: int
+
+
+@dataclass(frozen=True)
+class ContributorScore:
+    user_id: str
+    score: int
+    details: list[ContestScore]
+    rating: int | None = None
 
 
 def abbreviate_school_name(school_name: Any) -> Any:
@@ -139,10 +186,28 @@ def school_grade_range(school_type: str) -> str:
     return "4to6" if normalize_school_type(school_type) == "high" else "1to3"
 
 
+def grade_numbers(school_type: str) -> range:
+    return range(4, 7) if normalize_school_type(school_type) == "high" else range(1, 4)
+
+
+def grade_slot(grade: int, school_type: str) -> int:
+    return grade - 3 if normalize_school_type(school_type) == "high" else grade
+
+
 def html_file_path(contest_type: str, school_type: str) -> Path:
     return (
         HTML_DIR
         / f"ajl_ranking_{season_suffix()}_{school_grade_range(school_type)}_{contest_type}.html"
+    )
+
+
+def personal_html_file_path(contest_type: str, grade: int, school_type: str) -> Path:
+    return (
+        HTML_DIR
+        / (
+            f"personal_grade_{grade}_rankings_{contest_type}_"
+            f"{season_suffix()}_{normalize_school_type(school_type)}.html"
+        )
     )
 
 
@@ -179,6 +244,47 @@ def fetch_school_rank_tables(
     return frames, html_changed
 
 
+def fetch_personal_rank_tables(
+    school_type: str,
+) -> tuple[dict[str, dict[int, pd.DataFrame]], dict[str, bool]]:
+    HTML_DIR.mkdir(parents=True, exist_ok=True)
+    school_type = normalize_school_type(school_type)
+    frames: dict[str, dict[int, pd.DataFrame]] = {"A": {}, "H": {}}
+    html_changed = {"A": False, "H": False}
+
+    for contest_type in CONTEST_TYPES:
+        for grade in grade_numbers(school_type):
+            if grade_slot(grade, school_type) == 3 and SEASON == "WINTER":
+                frames[contest_type][grade] = pd.DataFrame()
+                continue
+
+            path = personal_html_file_path(contest_type, grade, school_type)
+            try:
+                previous_hash = calculate_hash.calculate_hash(str(path))
+            except FileNotFoundError:
+                previous_hash = None
+
+            response = requests.get(
+                AJL_PERSONAL_RANKING_BASE_URL.format(
+                    season_suffix(), grade, contest_type
+                )
+            )
+            response.raise_for_status()
+            response.encoding = "utf-8"
+
+            with path.open("w", encoding="utf-8") as f:
+                f.write(response.text)
+
+            current_hash = calculate_hash.calculate_hash(str(path))
+            if current_hash != previous_hash:
+                html_changed[contest_type] = True
+
+            df = pd.read_html(StringIO(response.text), encoding="utf-8")[0]
+            frames[contest_type][grade] = df[df["学校名"] != "学校名"]
+
+    return frames, html_changed
+
+
 def find_matching_schools(
     query: str,
     tables_by_type: dict[str, tuple[dict[str, pd.DataFrame], dict[str, bool]]],
@@ -208,14 +314,561 @@ def find_matching_schools(
     return exact_matches or partial_matches
 
 
+def school_image_filename(school_name: str, school_type: str, contest_type: str) -> str:
+    key = f"{normalize_school_type(school_type)}:{school_name}:{contest_type}"
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+    return f"school_rank_{contest_type}_{normalize_school_type(school_type)}_{digest}.png"
+
+
+def line_seed_jp_font_paths() -> list[Path]:
+    local_dirs = [
+        Path("asset/fonts"),
+        LINE_SEED_JP_FONT_DIR,
+        Path("C:/Windows/Fonts"),
+    ]
+    return [directory / font_name for directory in local_dirs for font_name in LINE_SEED_JP_FONT_NAMES]
+
+
+def ensure_line_seed_jp_fonts() -> None:
+    global LINE_SEED_JP_DOWNLOAD_ATTEMPTED
+
+    if LINE_SEED_JP_DOWNLOAD_ATTEMPTED:
+        return
+    if any(path.exists() for path in line_seed_jp_font_paths()):
+        return
+
+    LINE_SEED_JP_DOWNLOAD_ATTEMPTED = True
+    try:
+        response = requests.get(
+            LINE_SEED_JP_DOWNLOAD_URL,
+            headers={"User-Agent": "atcotify school rank graph"},
+            timeout=20,
+        )
+        response.raise_for_status()
+
+        LINE_SEED_JP_FONT_DIR.mkdir(parents=True, exist_ok=True)
+        wanted_names = set(LINE_SEED_JP_FONT_NAMES)
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            for member in archive.infolist():
+                font_name = Path(member.filename).name
+                if font_name not in wanted_names:
+                    continue
+                target_path = LINE_SEED_JP_FONT_DIR / font_name
+                with archive.open(member) as source, target_path.open("wb") as target:
+                    target.write(source.read())
+    except Exception as e:
+        print(f"Failed to download LINE Seed JP fonts: {e}")
+
+
+def load_graph_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    ensure_line_seed_jp_fonts()
+    font_paths = [
+        *line_seed_jp_font_paths(),
+        Path("C:/Windows/Fonts/meiryo.ttc"),
+        Path("C:/Windows/Fonts/msgothic.ttc"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    ]
+    for font_path in font_paths:
+        if font_path.exists():
+            return ImageFont.truetype(font_path, size)
+    return ImageFont.load_default()
+
+
+def to_int_score(value: Any) -> int:
+    numeric = pd.to_numeric(pd.Series([value]), errors="coerce").fillna(0).iloc[0]
+    return max(0, int(float(numeric)))
+
+
+def fetch_user_rating(user_id: str) -> int | None:
+    if user_id in USER_RATING_CACHE:
+        return USER_RATING_CACHE[user_id]
+
+    try:
+        response = requests.get(
+            f"https://atcoder.jp/users/{user_id}/history/json",
+            headers={"User-Agent": "atcotify school rank graph"},
+            timeout=8,
+        )
+        response.raise_for_status()
+        history = response.json()
+        rating = None
+        if history:
+            rating = int(history[-1]["NewRating"])
+        USER_RATING_CACHE[user_id] = rating
+        return rating
+    except Exception as e:
+        print(f"Failed to fetch AtCoder rating for {user_id}: {e}")
+        USER_RATING_CACHE[user_id] = None
+        return None
+
+
+def rating_text_color(rating: int | None) -> tuple[int, int, int]:
+    if rating is None or rating < 400:
+        return (128, 128, 128)
+    if rating < 800:
+        return (128, 64, 0)
+    if rating < 1200:
+        return (0, 128, 0)
+    if rating < 1600:
+        return (0, 192, 192)
+    if rating < 2000:
+        return (0, 0, 255)
+    if rating < 2400:
+        return (192, 192, 0)
+    if rating < 2800:
+        return (255, 128, 0)
+    return (255, 0, 0)
+
+
+def soften_color(
+    color: tuple[int, int, int],
+    ratio: float = 0.82,
+) -> tuple[int, int, int]:
+    return tuple(int(channel * (1 - ratio) + 255 * ratio) for channel in color)
+
+
+def contest_kind(contest_id: str) -> str:
+    kind = ""
+    for char in contest_id.strip().lower():
+        if not char.isalpha():
+            break
+        kind += char
+    return kind or contest_id.strip().lower()
+
+
+def contest_background_color(contest_id: str) -> tuple[int, int, int]:
+    kind_colors = {
+        "abc": (198, 198, 248),
+        "arc": (255, 225, 180),
+        "agc": (255, 198, 198),
+        "ahc": (214, 238, 204),
+        "joi": (185, 220, 250),
+        "typical": (238, 206, 242),
+    }
+    kind = contest_kind(contest_id)
+    if kind in kind_colors:
+        return kind_colors[kind]
+
+    digest = hashlib.sha1(kind.encode("utf-8")).hexdigest()
+    hue = int(digest[:8], 16) / 0xFFFFFFFF
+    saturation = 0.32 + (int(digest[8:10], 16) / 255) * 0.18
+    lightness = 0.78 + (int(digest[10:12], 16) / 255) * 0.08
+    red, green, blue = colorsys.hls_to_rgb(hue, lightness, saturation)
+    return (int(red * 255), int(green * 255), int(blue * 255))
+
+
+def contest_score_columns(df: pd.DataFrame) -> list[Any]:
+    columns = list(df.columns)
+    if "スコア" in columns:
+        return columns[columns.index("スコア") + 1 :]
+    return [column for column in columns if str(column).strip() not in META_COLUMNS]
+
+
+def extract_contributors(
+    school_name: str,
+    contest_type: str,
+    personal_frames: dict[str, dict[int, pd.DataFrame]] | None,
+) -> list[ContributorScore]:
+    if personal_frames is None:
+        return []
+
+    contributors = []
+    detail_limit = CONTEST_DETAIL_LIMITS[contest_type]
+    for df in personal_frames.get(contest_type, {}).values():
+        if df.empty or not {"学校名", "ユーザID", "スコア"}.issubset(df.columns):
+            continue
+
+        score_columns = contest_score_columns(df)
+        rows = df[(df["学校名"] == school_name) & df["ユーザID"].notna()]
+        for _, row in rows.iterrows():
+            user_id = str(row["ユーザID"]).strip()
+            if not user_id or user_id == "ユーザID":
+                continue
+
+            details = []
+            for column in score_columns:
+                contest_id = str(column).strip()
+                if not contest_id or contest_id.startswith("Unnamed"):
+                    continue
+                score = to_int_score(row[column])
+                if score > 0:
+                    details.append(ContestScore(contest_id=contest_id, score=score))
+
+            details.sort(key=lambda item: (-item.score, item.contest_id))
+            contributors.append(
+                ContributorScore(
+                    user_id=user_id,
+                    score=to_int_score(row["スコア"]),
+                    details=details[:detail_limit],
+                    rating=fetch_user_rating(user_id),
+                )
+            )
+
+    contributors.sort(key=lambda item: (-item.score, item.user_id))
+    return contributors
+
+
+def draw_fit_text(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[int, int],
+    text: str,
+    max_width: int,
+    font_size: int,
+    fill: tuple[int, int, int],
+    min_size: int = 10,
+) -> int:
+    for size in range(font_size, min_size - 1, -1):
+        font = load_graph_font(size)
+        if draw.textlength(text, font=font) <= max_width:
+            draw.text(xy, text, font=font, fill=fill)
+            return size
+
+    font = load_graph_font(min_size)
+    clipped = text
+    while clipped and draw.textlength(clipped + "...", font=font) > max_width:
+        clipped = clipped[:-1]
+    if clipped:
+        draw.text(xy, clipped + "...", font=font, fill=fill)
+    return min_size
+
+
+def draw_fit_text_in_box(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    text: str,
+    max_size: int,
+    fill: tuple[int, int, int],
+    min_size: int = 10,
+    align: str = "left",
+) -> int:
+    x0, y0, x1, y1 = box
+    max_width = max(1, x1 - x0)
+    max_height = max(1, y1 - y0)
+
+    for size in range(max_size, min_size - 1, -1):
+        font = load_graph_font(size)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        if text_width <= max_width and text_height <= max_height:
+            if align == "center":
+                x = x0 + (max_width - text_width) / 2 - bbox[0]
+            elif align == "right":
+                x = x1 - text_width - bbox[0]
+            else:
+                x = x0 - bbox[0]
+            y = y0 + (max_height - text_height) / 2 - bbox[1]
+            draw.text((x, y), text, font=font, fill=fill)
+            return size
+
+    font = load_graph_font(min_size)
+    clipped = text
+    while clipped:
+        candidate = clipped + "..."
+        bbox = draw.textbbox((0, 0), candidate, font=font)
+        if bbox[2] - bbox[0] <= max_width:
+            text_height = bbox[3] - bbox[1]
+            y = y0 + (max_height - text_height) / 2 - bbox[1]
+            draw.text((x0 - bbox[0], y), candidate, font=font, fill=fill)
+            return min_size
+        clipped = clipped[:-1]
+    return min_size
+
+
+def wrap_detail_text(details: list[ContestScore], max_items: int) -> list[str]:
+    return [f"{detail.contest_id}: {detail.score}" for detail in details[:max_items]]
+
+
+def nice_axis_step(max_value: int, target_ticks: int = 8) -> int:
+    if max_value <= 0:
+        return 1
+
+    rough_step = max(1, max_value // target_ticks)
+    magnitude = 1
+    while magnitude * 10 <= rough_step:
+        magnitude *= 10
+
+    for multiplier in (1, 2, 5, 10):
+        step = multiplier * magnitude
+        if step >= rough_step:
+            return step
+    return 10 * magnitude
+
+
+def format_axis_label(value: int) -> str:
+    if value >= 100000:
+        return f"{value // 1000}K"
+    if value >= 1000 and value % 1000 == 0:
+        return f"{value // 1000}K"
+    return f"{value:,}"
+
+
+def build_contribution_image(
+    school_name: str,
+    school_type: str,
+    contest_type: str,
+    rank: int,
+    school_score: int,
+    above_score: int | None,
+    personal_frames: dict[str, dict[int, pd.DataFrame]] | None,
+) -> SchoolRankImage | None:
+    contributors = extract_contributors(school_name, contest_type, personal_frames)
+    if not contributors and school_score <= 0:
+        return None
+
+    contributor_total = sum(contributor.score for contributor in contributors)
+    if contributor_total > school_score and school_score > 0:
+        print(
+            f"Personal score total exceeds school score for "
+            f"{school_name} {contest_type}: {contributor_total} > {school_score}"
+        )
+
+    visible_contributors = []
+    running_total = 0
+    for contributor in contributors:
+        if school_score > 0 and running_total + contributor.score > school_score:
+            adjusted_score = max(0, school_score - running_total)
+            if adjusted_score > 0:
+                visible_contributors.append(
+                    ContributorScore(
+                        user_id=contributor.user_id,
+                        score=adjusted_score,
+                        details=contributor.details,
+                        rating=contributor.rating,
+                    )
+                )
+            running_total = school_score
+            break
+        visible_contributors.append(contributor)
+        running_total += contributor.score
+
+    missing_score = max(0, school_score - running_total)
+    diff_score = max(0, (above_score or school_score) - school_score)
+    graph_total = max(
+        school_score + diff_score,
+        contributor_total if school_score <= 0 else 0,
+        1,
+    )
+
+    width = 1320
+    left = 110
+    right = 1150
+    graph_top = 205
+    graph_height = 695
+    footer_top = graph_top + graph_height + 20
+    height = footer_top + 120
+    image = Image.new("RGB", (width, height), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+
+    title_font = load_graph_font(56)
+    subtitle_font = load_graph_font(23)
+    score_font = load_graph_font(28)
+    axis_font = load_graph_font(30)
+    small_font = load_graph_font(14)
+
+    season_label = "Winter" if SEASON == "WINTER" else "Summer"
+    contest_label = CONTEST_LABELS[contest_type]
+    draw.text(
+        (left, 36),
+        f"AtCoder Junior League {YEAR} {season_label} - {contest_label}部門",
+        font=subtitle_font,
+        fill=(20, 20, 20),
+    )
+    title = f"{school_name} ({rank}位)"
+    title_width = draw.textlength(title, font=title_font)
+    draw.text(((width - title_width) / 2, 78), title, font=title_font, fill=(0, 0, 0))
+    score_text = f"{school_score:,}pt"
+    score_width = draw.textlength(score_text, font=score_font)
+    draw.text(((width - score_width) / 2, 150), score_text, font=score_font, fill=(0, 0, 0))
+
+    name_area_width = 330
+    score_area_left = left + name_area_width
+    draw.rectangle((left, graph_top, right, graph_top + graph_height), outline=(0, 0, 0), width=2)
+
+    tick_step = nice_axis_step(graph_total)
+    max_tick = ((graph_total + tick_step - 1) // tick_step) * tick_step
+    if max_tick:
+        for tick in range(tick_step, max_tick + 1, tick_step):
+            y = graph_top + graph_height - int(graph_height * tick / max_tick)
+            draw.line((65, y, width - 55, y), fill=(190, 190, 190), width=1)
+            axis_label = format_axis_label(tick)
+            label_bbox = draw.textbbox((0, 0), axis_label, font=axis_font)
+            label_width = label_bbox[2] - label_bbox[0]
+            label_height = label_bbox[3] - label_bbox[1]
+            draw.text(
+                (left - label_width - 18, y - label_height / 2 - label_bbox[1]),
+                axis_label,
+                font=axis_font,
+                fill=(0, 0, 0),
+            )
+
+    current_bottom = graph_top + graph_height
+    legend_contests: list[str] = []
+
+    for contributor in visible_contributors:
+        if contributor.score <= 0:
+            continue
+
+        segment_height = max(1, int(graph_height * contributor.score / max_tick)) if max_tick else 1
+        y0 = max(graph_top, current_bottom - segment_height)
+        y1 = current_bottom
+        text_fill = rating_text_color(contributor.rating)
+        name_background = soften_color(text_fill)
+        draw.rectangle((left, y0, score_area_left, y1), fill=name_background, outline=(0, 0, 0), width=1)
+        sub_bottom = y1
+        sub_total = 0
+        for detail in contributor.details:
+            if sub_total >= contributor.score:
+                break
+
+            score = min(detail.score, contributor.score - sub_total)
+            if score <= 0:
+                continue
+
+            sub_height = max(1, int(segment_height * score / contributor.score))
+            sub_y0 = max(y0, sub_bottom - sub_height)
+            fill = contest_background_color(detail.contest_id)
+            draw.rectangle(
+                (score_area_left, sub_y0, right, sub_bottom),
+                fill=fill,
+                outline=(150, 150, 180),
+                width=1,
+            )
+            sub_available_height = sub_bottom - sub_y0
+            if sub_available_height >= 2:
+                draw_fit_text_in_box(
+                    draw,
+                    (
+                        right - 430,
+                        sub_y0 + 1,
+                        right - 16,
+                        sub_bottom - 1,
+                    ),
+                    f"{detail.contest_id}: {score}",
+                    min(56, sub_available_height - 1),
+                    (0, 0, 0),
+                    min_size=1,
+                    align="center",
+                )
+            if detail.contest_id not in legend_contests:
+                legend_contests.append(detail.contest_id)
+            sub_bottom = sub_y0
+            sub_total += score
+
+        if sub_total < contributor.score:
+            draw.rectangle(
+                (score_area_left, y0, right, sub_bottom),
+                fill=(230, 230, 230),
+                outline=(150, 150, 180),
+                width=1,
+            )
+            sub_available_height = sub_bottom - y0
+            if sub_available_height >= 2:
+                draw_fit_text_in_box(
+                    draw,
+                    (
+                        right - 430,
+                        y0 + 1,
+                        right - 16,
+                        sub_bottom - 1,
+                    ),
+                    f"その他: {contributor.score - sub_total}",
+                    min(56, sub_available_height - 1),
+                    (70, 70, 70),
+                    min_size=1,
+                    align="center",
+                )
+
+        draw.rectangle((left, y0, right, y1), outline=(0, 0, 0), width=2)
+        draw.line((score_area_left, y0, score_area_left, y1), fill=(0, 0, 0), width=2)
+
+        label_text = f"{contributor.user_id}: {contributor.score}"
+        available_height = y1 - y0
+        if available_height >= 2:
+            draw_fit_text_in_box(
+                draw,
+                (left + 12, y0 + 2, score_area_left - 12, y1 - 2),
+                label_text,
+                min(84, available_height - 2),
+                text_fill,
+                min_size=1,
+            )
+        elif available_height >= 2:
+            draw_fit_text_in_box(
+                draw,
+                (left + 8, y0 + 1, score_area_left - 8, y1 - 1),
+                label_text,
+                max(1, available_height),
+                text_fill,
+                min_size=1,
+            )
+
+        current_bottom = y0
+
+    for label, score, fill, text_fill in [
+        ("その他/未掲載", missing_score, (230, 230, 230), (80, 80, 80)),
+        ("1つ上の学校との差分", diff_score, (255, 230, 185), (120, 100, 70)),
+    ]:
+        if score <= 0:
+            continue
+
+        segment_height = max(1, int(graph_height * score / max_tick)) if max_tick else 1
+        y0 = max(graph_top, current_bottom - segment_height)
+        y1 = current_bottom
+        draw.rectangle((left, y0, right, y1), fill=fill, outline=(0, 0, 0), width=2)
+        label_text = f"{label}: {score}"
+        available_height = y1 - y0
+        if available_height >= 34:
+            draw_fit_text_in_box(
+                draw,
+                (left + 22, y0 + 4, right - 22, y1 - 4),
+                label_text,
+                min(48, available_height - 8),
+                text_fill,
+                min_size=13,
+            )
+        elif available_height >= 14:
+            draw.text((left + 8, y0), label_text, font=small_font, fill=text_fill)
+        current_bottom = y0
+
+    label_x = left
+    label_y = footer_top
+    draw.text((label_x, label_y), f"{rank}th", font=score_font, fill=(0, 0, 0))
+    draw.text((label_x, label_y + 34), f"{school_name}", font=score_font, fill=(0, 0, 0))
+    draw.text((label_x, label_y + 68), f"(n={len(contributors)})", font=score_font, fill=(0, 0, 0))
+
+    details_x = 430
+    details_y = footer_top
+    for index, contest_id in enumerate(legend_contests[:18]):
+        x = details_x + (index % 3) * 250
+        y = details_y + (index // 3) * 24
+        draw.rectangle(
+            (x, y + 4, x + 18, y + 18),
+            fill=contest_background_color(contest_id),
+            outline=(130, 130, 130),
+            width=1,
+        )
+        draw_fit_text(draw, (x + 24, y), contest_id, 210, 17, (40, 40, 40))
+
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return SchoolRankImage(
+        filename=school_image_filename(school_name, school_type, contest_type),
+        data=output.getvalue(),
+    )
+
+
 def build_school_rank_embeds(
     school_name: str,
     school_type: str,
     frames: dict[str, pd.DataFrame],
     html_changed: dict[str, bool],
     history: dict[str, Any],
-) -> tuple[list[discord.Embed], bool, bool]:
-    embeds = []
+    personal_frames: dict[str, dict[int, pd.DataFrame]] | None = None,
+) -> tuple[list[SchoolRankMessagePart], bool, bool]:
+    parts = []
     changed = False
     school_type = normalize_school_type(school_type)
     school_history = ensure_school_rank_history(history, school_name, school_type)
@@ -253,6 +906,7 @@ def build_school_rank_embeds(
             score_diff = above_score - current_score
             description += f"> **{above_school_abbr}**まであと**{score_diff}**点！"
         else:
+            above_score = None
             description += "> 現在トップです！"
 
         if previous_score is not None and last_score is not None:
@@ -268,7 +922,7 @@ def build_school_rank_embeds(
             f"https://img.atcoder.jp/ajl{YEAR}{season_suffix()}/"
             f"school_rankings_grades_{school_grade_range(school_type)}_{contest_type}.html"
         )
-        contest_label = "アルゴリズム" if contest_type == "A" else "ヒューリスティック"
+        contest_label = CONTEST_LABELS[contest_type]
         embed = discord.Embed(
             title=f"{contest_label}",
             description=description,
@@ -276,7 +930,18 @@ def build_school_rank_embeds(
             url=embed_url,
         )
         embed.set_author(name=format_school_label(school_name, school_type))
-        embeds.append(embed)
+        image = build_contribution_image(
+            school_name=school_name,
+            school_type=school_type,
+            contest_type=contest_type,
+            rank=current_rank,
+            school_score=current_score,
+            above_score=above_score,
+            personal_frames=personal_frames,
+        )
+        if image is not None:
+            embed.set_image(url=f"attachment://{image.filename}")
+        parts.append(SchoolRankMessagePart(embed=embed, image=image))
 
         if html_changed[contest_type]:
             school_history[contest_type]["previous_rank"] = last_rank
@@ -285,7 +950,26 @@ def build_school_rank_embeds(
             school_history[contest_type]["last_score"] = current_score
             changed = True
 
-    return embeds, bool(embeds), changed
+    return parts, bool(parts), changed
+
+
+def message_parts_to_embeds(
+    parts: list[SchoolRankMessagePart],
+) -> list[discord.Embed]:
+    return [part.embed for part in parts]
+
+
+def message_parts_to_files(
+    parts: list[SchoolRankMessagePart],
+) -> list[discord.File]:
+    files = []
+    for part in parts:
+        if part.image is None:
+            continue
+        files.append(
+            discord.File(BytesIO(part.image.data), filename=part.image.filename)
+        )
+    return files
 
 
 class SchoolRank(commands.Cog):
@@ -302,21 +986,24 @@ class SchoolRank(commands.Cog):
         school_type: str = DEFAULT_SCHOOL_TYPE,
         frames: dict[str, pd.DataFrame] | None = None,
         html_changed: dict[str, bool] | None = None,
+        personal_frames: dict[str, dict[int, pd.DataFrame]] | None = None,
         history: dict[str, Any] | None = None,
-    ) -> tuple[list[discord.Embed], bool]:
+    ) -> tuple[list[SchoolRankMessagePart], bool]:
         if frames is None or html_changed is None:
             frames, html_changed = fetch_school_rank_tables(school_type)
+        if personal_frames is None:
+            personal_frames, _ = fetch_personal_rank_tables(school_type)
         if history is None:
             history = load_school_rank_history()
 
-        embeds, found, changed = build_school_rank_embeds(
-            school_name, school_type, frames, html_changed, history
+        parts, found, changed = build_school_rank_embeds(
+            school_name, school_type, frames, html_changed, history, personal_frames
         )
         if changed:
             save_school_rank_history(history)
         if not found:
             return [], changed
-        return embeds, changed
+        return parts, changed
 
     async def send_school_rank(
         self,
@@ -326,10 +1013,13 @@ class SchoolRank(commands.Cog):
     ):
         try:
             await interaction.response.defer()
-            embeds, _ = await self.get_school_rank_data(school_name, school_type)
+            parts, _ = await self.get_school_rank_data(school_name, school_type)
 
-            if embeds:
-                await interaction.followup.send(embeds=embeds)
+            if parts:
+                await interaction.followup.send(
+                    embeds=message_parts_to_embeds(parts),
+                    files=message_parts_to_files(parts),
+                )
             else:
                 await interaction.followup.send(
                     f"{format_school_label(school_name, school_type)}"
@@ -362,28 +1052,37 @@ class SchoolRank(commands.Cog):
                     f"「{query}」に一致する学校データが見つかりませんでした。"
                 )
                 return
+            personal_tables_by_type = {
+                school_type: fetch_personal_rank_tables(school_type)[0]
+                for school_type in sorted({school_type for _, school_type in matches})
+            }
 
             history = load_school_rank_history()
-            embeds = []
+            parts = []
             changed = False
             omitted_count = 0
             for school_name, school_type in matches:
                 frames, html_changed = tables_by_type[school_type]
-                school_embeds, found, school_changed = build_school_rank_embeds(
-                    school_name, school_type, frames, html_changed, history
+                school_parts, found, school_changed = build_school_rank_embeds(
+                    school_name,
+                    school_type,
+                    frames,
+                    html_changed,
+                    history,
+                    personal_tables_by_type.get(school_type),
                 )
                 if not found:
                     continue
-                if len(embeds) + len(school_embeds) > MAX_SEARCH_RESULT_EMBEDS:
+                if len(parts) + len(school_parts) > MAX_SEARCH_RESULT_EMBEDS:
                     omitted_count += 1
                     continue
-                embeds.extend(school_embeds)
+                parts.extend(school_parts)
                 changed = changed or school_changed
 
             if changed:
                 save_school_rank_history(history)
 
-            if not embeds:
+            if not parts:
                 await interaction.followup.send(
                     f"「{query}」に一致する学校データが見つかりませんでした。"
                 )
@@ -392,7 +1091,11 @@ class SchoolRank(commands.Cog):
             content = None
             if omitted_count:
                 content = f"候補が多いため、追加の{omitted_count}校は省略しました。"
-            await interaction.followup.send(content=content, embeds=embeds)
+            await interaction.followup.send(
+                content=content,
+                embeds=message_parts_to_embeds(parts),
+                files=message_parts_to_files(parts),
+            )
         except requests.RequestException as e:
             print(f"Error fetching data: {e}")
             await interaction.followup.send(
@@ -514,17 +1217,27 @@ class SchoolRank(commands.Cog):
                 print("No changes in School Rank.")
                 return
 
-            embeds_by_school = {}
+            personal_tables_by_type = {
+                school_type: fetch_personal_rank_tables(school_type)[0]
+                for school_type, (_, html_changed) in tables_by_type.items()
+                if any(html_changed.values())
+            }
+            parts_by_school = {}
             changed_by_school = {}
             for school_name, school_type in sorted(
                 {(school, school_type) for _, _, school, school_type in target_guilds}
             ):
                 frames, html_changed = tables_by_type[school_type]
-                embeds, found, changed = build_school_rank_embeds(
-                    school_name, school_type, frames, html_changed, history
+                parts, found, changed = build_school_rank_embeds(
+                    school_name,
+                    school_type,
+                    frames,
+                    html_changed,
+                    history,
+                    personal_tables_by_type.get(school_type),
                 )
                 school_key = (school_name, school_type)
-                embeds_by_school[school_key] = embeds if found else []
+                parts_by_school[school_key] = parts if found else []
                 changed_by_school[school_key] = changed
 
             if any(changed_by_school.values()):
@@ -537,11 +1250,14 @@ class SchoolRank(commands.Cog):
                     continue
 
                 school_key = (school_name, school_type)
-                embeds = embeds_by_school.get(school_key, [])
-                if embeds and changed_by_school.get(school_key, False):
-                    await channel.send(embeds=embeds)
+                parts = parts_by_school.get(school_key, [])
+                if parts and changed_by_school.get(school_key, False):
+                    await channel.send(
+                        embeds=message_parts_to_embeds(parts),
+                        files=message_parts_to_files(parts),
+                    )
                     print(f"School Rank updated and sent to guild {guild_id}.")
-                elif not embeds:
+                elif not parts:
                     print(f"School Rank data not found for {school_name} in guild {guild_id}.")
         except Exception as e:
             print(f"Error in check_school_rank_loop: {e}")
