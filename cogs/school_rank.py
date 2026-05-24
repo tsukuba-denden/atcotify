@@ -60,6 +60,16 @@ LINE_SEED_JP_FONT_NAMES = (
     "LINESeedJP_TTF_Bd.ttf",
     "LINESeedJP_TTF_Rg.ttf",
 )
+GRAPH_FONT_NAMES_BY_WEIGHT = {
+    "bold": (
+        "LINESeedJP_OTF_Bd.otf",
+        "LINESeedJP_TTF_Bd.ttf",
+    ),
+    "regular": (
+        "LINESeedJP_OTF_Rg.otf",
+        "LINESeedJP_TTF_Rg.ttf",
+    ),
+}
 LINE_SEED_JP_DOWNLOAD_ATTEMPTED = False
 
 
@@ -320,13 +330,15 @@ def school_image_filename(school_name: str, school_type: str, contest_type: str)
     return f"school_rank_{contest_type}_{normalize_school_type(school_type)}_{digest}.png"
 
 
-def line_seed_jp_font_paths() -> list[Path]:
+def line_seed_jp_font_paths(
+    font_names: tuple[str, ...] = LINE_SEED_JP_FONT_NAMES,
+) -> list[Path]:
     local_dirs = [
         Path("asset/fonts"),
         LINE_SEED_JP_FONT_DIR,
         Path("C:/Windows/Fonts"),
     ]
-    return [directory / font_name for directory in local_dirs for font_name in LINE_SEED_JP_FONT_NAMES]
+    return [directory / font_name for directory in local_dirs for font_name in font_names]
 
 
 def ensure_line_seed_jp_fonts() -> None:
@@ -360,15 +372,34 @@ def ensure_line_seed_jp_fonts() -> None:
         print(f"Failed to download LINE Seed JP fonts: {e}")
 
 
-def load_graph_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+def load_graph_font(
+    size: int,
+    weight: str = "regular",
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     ensure_line_seed_jp_fonts()
+    line_seed_font_paths = line_seed_jp_font_paths(
+        GRAPH_FONT_NAMES_BY_WEIGHT.get(weight, GRAPH_FONT_NAMES_BY_WEIGHT["regular"])
+    )
+    if weight == "bold":
+        system_font_paths = [
+            Path("C:/Windows/Fonts/meiryob.ttc"),
+            Path("C:/Windows/Fonts/YuGothB.ttc"),
+            Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"),
+            Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ]
+    else:
+        system_font_paths = [
+            Path("C:/Windows/Fonts/meiryo.ttc"),
+            Path("C:/Windows/Fonts/YuGothR.ttc"),
+            Path("C:/Windows/Fonts/msgothic.ttc"),
+            Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+            Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ]
     font_paths = [
-        *line_seed_jp_font_paths(),
-        Path("C:/Windows/Fonts/meiryo.ttc"),
-        Path("C:/Windows/Fonts/msgothic.ttc"),
-        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
-        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
-        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        *line_seed_font_paths,
+        *system_font_paths,
     ]
     for font_path in font_paths:
         if font_path.exists():
@@ -459,6 +490,10 @@ def contest_background_color(contest_id: str) -> tuple[int, int, int]:
     return (int(red * 255), int(green * 255), int(blue * 255))
 
 
+def contest_kind_label(contest_id: str) -> str:
+    return contest_kind(contest_id).upper()
+
+
 def contest_score_columns(df: pd.DataFrame) -> list[Any]:
     columns = list(df.columns)
     if "スコア" in columns:
@@ -518,14 +553,15 @@ def draw_fit_text(
     font_size: int,
     fill: tuple[int, int, int],
     min_size: int = 10,
+    weight: str = "regular",
 ) -> int:
     for size in range(font_size, min_size - 1, -1):
-        font = load_graph_font(size)
+        font = load_graph_font(size, weight)
         if draw.textlength(text, font=font) <= max_width:
             draw.text(xy, text, font=font, fill=fill)
             return size
 
-    font = load_graph_font(min_size)
+    font = load_graph_font(min_size, weight)
     clipped = text
     while clipped and draw.textlength(clipped + "...", font=font) > max_width:
         clipped = clipped[:-1]
@@ -542,13 +578,14 @@ def draw_fit_text_in_box(
     fill: tuple[int, int, int],
     min_size: int = 10,
     align: str = "left",
+    weight: str = "regular",
 ) -> int:
     x0, y0, x1, y1 = box
     max_width = max(1, x1 - x0)
     max_height = max(1, y1 - y0)
 
     for size in range(max_size, min_size - 1, -1):
-        font = load_graph_font(size)
+        font = load_graph_font(size, weight)
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -563,15 +600,22 @@ def draw_fit_text_in_box(
             draw.text((x, y), text, font=font, fill=fill)
             return size
 
-    font = load_graph_font(min_size)
+    font = load_graph_font(min_size, weight)
     clipped = text
     while clipped:
         candidate = clipped + "..."
         bbox = draw.textbbox((0, 0), candidate, font=font)
         if bbox[2] - bbox[0] <= max_width:
+            text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
+            if align == "center":
+                x = x0 + (max_width - text_width) / 2 - bbox[0]
+            elif align == "right":
+                x = x1 - text_width - bbox[0]
+            else:
+                x = x0 - bbox[0]
             y = y0 + (max_height - text_height) / 2 - bbox[1]
-            draw.text((x0 - bbox[0], y), candidate, font=font, fill=fill)
+            draw.text((x, y), candidate, font=font, fill=fill)
             return min_size
         clipped = clipped[:-1]
     return min_size
@@ -662,11 +706,11 @@ def build_contribution_image(
     image = Image.new("RGB", (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(image)
 
-    title_font = load_graph_font(56)
-    subtitle_font = load_graph_font(23)
-    score_font = load_graph_font(28)
-    axis_font = load_graph_font(30)
-    small_font = load_graph_font(14)
+    title_font = load_graph_font(56, "bold")
+    subtitle_font = load_graph_font(23, "regular")
+    score_font = load_graph_font(28, "bold")
+    axis_font = load_graph_font(30, "regular")
+    small_font = load_graph_font(14, "regular")
 
     season_label = "Winter" if SEASON == "WINTER" else "Summer"
     contest_label = CONTEST_LABELS[contest_type]
@@ -705,7 +749,7 @@ def build_contribution_image(
             )
 
     current_bottom = graph_top + graph_height
-    legend_contests: list[str] = []
+    legend_contest_kinds: list[str] = []
 
     for contributor in visible_contributors:
         if contributor.score <= 0:
@@ -741,9 +785,9 @@ def build_contribution_image(
                 draw_fit_text_in_box(
                     draw,
                     (
-                        right - 430,
+                        score_area_left + 8,
                         sub_y0 + 1,
-                        right - 16,
+                        right - 8,
                         sub_bottom - 1,
                     ),
                     f"{detail.contest_id}: {score}",
@@ -751,9 +795,11 @@ def build_contribution_image(
                     (0, 0, 0),
                     min_size=1,
                     align="center",
+                    weight="regular",
                 )
-            if detail.contest_id not in legend_contests:
-                legend_contests.append(detail.contest_id)
+            detail_kind = contest_kind(detail.contest_id)
+            if detail_kind not in legend_contest_kinds:
+                legend_contest_kinds.append(detail_kind)
             sub_bottom = sub_y0
             sub_total += score
 
@@ -769,9 +815,9 @@ def build_contribution_image(
                 draw_fit_text_in_box(
                     draw,
                     (
-                        right - 430,
+                        score_area_left + 8,
                         y0 + 1,
-                        right - 16,
+                        right - 8,
                         sub_bottom - 1,
                     ),
                     f"その他: {contributor.score - sub_total}",
@@ -779,6 +825,7 @@ def build_contribution_image(
                     (70, 70, 70),
                     min_size=1,
                     align="center",
+                    weight="regular",
                 )
 
         draw.rectangle((left, y0, right, y1), outline=(0, 0, 0), width=2)
@@ -794,6 +841,8 @@ def build_contribution_image(
                 min(84, available_height - 2),
                 text_fill,
                 min_size=1,
+                align="center",
+                weight="bold",
             )
         elif available_height >= 2:
             draw_fit_text_in_box(
@@ -803,6 +852,8 @@ def build_contribution_image(
                 max(1, available_height),
                 text_fill,
                 min_size=1,
+                align="center",
+                weight="bold",
             )
 
         current_bottom = y0
@@ -828,6 +879,7 @@ def build_contribution_image(
                 min(48, available_height - 8),
                 text_fill,
                 min_size=13,
+                weight="regular",
             )
         elif available_height >= 14:
             draw.text((left + 8, y0), label_text, font=small_font, fill=text_fill)
@@ -841,16 +893,23 @@ def build_contribution_image(
 
     details_x = 430
     details_y = footer_top
-    for index, contest_id in enumerate(legend_contests[:18]):
+    for index, contest_kind_id in enumerate(legend_contest_kinds[:18]):
         x = details_x + (index % 3) * 250
         y = details_y + (index // 3) * 24
         draw.rectangle(
             (x, y + 4, x + 18, y + 18),
-            fill=contest_background_color(contest_id),
+            fill=contest_background_color(contest_kind_id),
             outline=(130, 130, 130),
             width=1,
         )
-        draw_fit_text(draw, (x + 24, y), contest_id, 210, 17, (40, 40, 40))
+        draw_fit_text(
+            draw,
+            (x + 24, y),
+            contest_kind_label(contest_kind_id),
+            210,
+            17,
+            (40, 40, 40),
+        )
 
     output = BytesIO()
     image.save(output, format="PNG")
