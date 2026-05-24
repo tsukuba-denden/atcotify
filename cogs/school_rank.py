@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import colorsys
 import hashlib
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -43,7 +42,7 @@ SCHOOL_RANK_FILE = Path("asset/school_rank.yaml")
 LEGACY_TSUKUBA_RANK_FILE = Path("asset/tsukuba_rank.yaml")
 AJL_RANKING_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/school_rankings_grades_{{}}_{{}}.html"
 AJL_PERSONAL_RANKING_BASE_URL = (
-    f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_{{}}_score.html"
+    f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_{{}}_{{}}.html"
 )
 CONTEST_TYPES = ("A", "H")
 SCHOOL_TYPES = ("junior_high", "high")
@@ -89,6 +88,7 @@ class SchoolRankMessagePart:
 class ContestScore:
     contest_id: str
     score: int
+    performance: int | None = None
 
 
 @dataclass(frozen=True)
@@ -211,12 +211,17 @@ def html_file_path(contest_type: str, school_type: str) -> Path:
     )
 
 
-def personal_html_file_path(contest_type: str, grade: int, school_type: str) -> Path:
+def personal_html_file_path(
+    contest_type: str,
+    grade: int,
+    school_type: str,
+    score_kind: str = "score",
+) -> Path:
     return (
         HTML_DIR
         / (
             f"personal_grade_{grade}_rankings_{contest_type}_"
-            f"{season_suffix()}_{normalize_school_type(school_type)}.html"
+            f"{season_suffix()}_{normalize_school_type(school_type)}_{score_kind}.html"
         )
     )
 
@@ -256,7 +261,11 @@ def fetch_school_rank_tables(
 
 def fetch_personal_rank_tables(
     school_type: str,
+    score_kind: str = "score",
 ) -> tuple[dict[str, dict[int, pd.DataFrame]], dict[str, bool]]:
+    if score_kind not in {"score", "perf"}:
+        raise ValueError(f"Unsupported personal ranking kind: {score_kind}")
+
     HTML_DIR.mkdir(parents=True, exist_ok=True)
     school_type = normalize_school_type(school_type)
     frames: dict[str, dict[int, pd.DataFrame]] = {"A": {}, "H": {}}
@@ -268,7 +277,7 @@ def fetch_personal_rank_tables(
                 frames[contest_type][grade] = pd.DataFrame()
                 continue
 
-            path = personal_html_file_path(contest_type, grade, school_type)
+            path = personal_html_file_path(contest_type, grade, school_type, score_kind)
             try:
                 previous_hash = calculate_hash.calculate_hash(str(path))
             except FileNotFoundError:
@@ -276,7 +285,7 @@ def fetch_personal_rank_tables(
 
             response = requests.get(
                 AJL_PERSONAL_RANKING_BASE_URL.format(
-                    season_suffix(), grade, contest_type
+                    season_suffix(), grade, contest_type, score_kind
                 )
             )
             response.raise_for_status()
@@ -412,6 +421,13 @@ def to_int_score(value: Any) -> int:
     return max(0, int(float(numeric)))
 
 
+def to_optional_int(value: Any) -> int | None:
+    numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if pd.isna(numeric):
+        return None
+    return int(float(numeric))
+
+
 def fetch_user_rating(user_id: str) -> int | None:
     if user_id in USER_RATING_CACHE:
         return USER_RATING_CACHE[user_id]
@@ -460,38 +476,8 @@ def soften_color(
     return tuple(int(channel * (1 - ratio) + 255 * ratio) for channel in color)
 
 
-def contest_kind(contest_id: str) -> str:
-    kind = ""
-    for char in contest_id.strip().lower():
-        if not char.isalpha():
-            break
-        kind += char
-    return kind or contest_id.strip().lower()
-
-
-def contest_background_color(contest_id: str) -> tuple[int, int, int]:
-    kind_colors = {
-        "abc": (198, 198, 248),
-        "arc": (255, 225, 180),
-        "agc": (255, 198, 198),
-        "ahc": (214, 238, 204),
-        "joi": (185, 220, 250),
-        "typical": (238, 206, 242),
-    }
-    kind = contest_kind(contest_id)
-    if kind in kind_colors:
-        return kind_colors[kind]
-
-    digest = hashlib.sha1(kind.encode("utf-8")).hexdigest()
-    hue = int(digest[:8], 16) / 0xFFFFFFFF
-    saturation = 0.32 + (int(digest[8:10], 16) / 255) * 0.18
-    lightness = 0.78 + (int(digest[10:12], 16) / 255) * 0.08
-    red, green, blue = colorsys.hls_to_rgb(hue, lightness, saturation)
-    return (int(red * 255), int(green * 255), int(blue * 255))
-
-
-def contest_kind_label(contest_id: str) -> str:
-    return contest_kind(contest_id).upper()
+def performance_background_color(performance: int | None) -> tuple[int, int, int]:
+    return soften_color(rating_text_color(performance), ratio=0.68)
 
 
 def contest_score_columns(df: pd.DataFrame) -> list[Any]:
@@ -505,22 +491,36 @@ def extract_contributors(
     school_name: str,
     contest_type: str,
     personal_frames: dict[str, dict[int, pd.DataFrame]] | None,
+    performance_frames: dict[str, dict[int, pd.DataFrame]] | None = None,
 ) -> list[ContributorScore]:
     if personal_frames is None:
         return []
 
     contributors = []
     detail_limit = CONTEST_DETAIL_LIMITS[contest_type]
-    for df in personal_frames.get(contest_type, {}).values():
+    for grade, df in personal_frames.get(contest_type, {}).items():
         if df.empty or not {"学校名", "ユーザID", "スコア"}.issubset(df.columns):
             continue
 
+        performance_df = None
+        if performance_frames is not None:
+            performance_df = performance_frames.get(contest_type, {}).get(grade)
         score_columns = contest_score_columns(df)
         rows = df[(df["学校名"] == school_name) & df["ユーザID"].notna()]
         for _, row in rows.iterrows():
             user_id = str(row["ユーザID"]).strip()
             if not user_id or user_id == "ユーザID":
                 continue
+
+            performance_row = None
+            if (
+                performance_df is not None
+                and not performance_df.empty
+                and "ユーザID" in performance_df.columns
+            ):
+                matched_perf_rows = performance_df[performance_df["ユーザID"] == user_id]
+                if not matched_perf_rows.empty:
+                    performance_row = matched_perf_rows.iloc[0]
 
             details = []
             for column in score_columns:
@@ -529,7 +529,19 @@ def extract_contributors(
                     continue
                 score = to_int_score(row[column])
                 if score > 0:
-                    details.append(ContestScore(contest_id=contest_id, score=score))
+                    performance = None
+                    if (
+                        performance_row is not None
+                        and column in performance_row.index
+                    ):
+                        performance = to_optional_int(performance_row[column])
+                    details.append(
+                        ContestScore(
+                            contest_id=contest_id,
+                            score=score,
+                            performance=performance,
+                        )
+                    )
 
             details.sort(key=lambda item: (-item.score, item.contest_id))
             contributors.append(
@@ -657,8 +669,14 @@ def build_contribution_image(
     school_score: int,
     above_score: int | None,
     personal_frames: dict[str, dict[int, pd.DataFrame]] | None,
+    performance_frames: dict[str, dict[int, pd.DataFrame]] | None = None,
 ) -> SchoolRankImage | None:
-    contributors = extract_contributors(school_name, contest_type, personal_frames)
+    contributors = extract_contributors(
+        school_name,
+        contest_type,
+        personal_frames,
+        performance_frames,
+    )
     if not contributors and school_score <= 0:
         return None
 
@@ -749,8 +767,6 @@ def build_contribution_image(
             )
 
     current_bottom = graph_top + graph_height
-    legend_contest_kinds: list[str] = []
-
     for contributor in visible_contributors:
         if contributor.score <= 0:
             continue
@@ -773,7 +789,7 @@ def build_contribution_image(
 
             sub_height = max(1, int(segment_height * score / contributor.score))
             sub_y0 = max(y0, sub_bottom - sub_height)
-            fill = contest_background_color(detail.contest_id)
+            fill = performance_background_color(detail.performance)
             draw.rectangle(
                 (score_area_left, sub_y0, right, sub_bottom),
                 fill=fill,
@@ -797,9 +813,6 @@ def build_contribution_image(
                     align="center",
                     weight="regular",
                 )
-            detail_kind = contest_kind(detail.contest_id)
-            if detail_kind not in legend_contest_kinds:
-                legend_contest_kinds.append(detail_kind)
             sub_bottom = sub_y0
             sub_total += score
 
@@ -893,20 +906,30 @@ def build_contribution_image(
 
     details_x = 430
     details_y = footer_top
-    for index, contest_kind_id in enumerate(legend_contest_kinds[:18]):
-        x = details_x + (index % 3) * 250
-        y = details_y + (index // 3) * 24
+    performance_legend = [
+        ("<400", None),
+        ("400", 400),
+        ("800", 800),
+        ("1200", 1200),
+        ("1600", 1600),
+        ("2000", 2000),
+        ("2400", 2400),
+        ("2800", 2800),
+    ]
+    for index, (label, performance) in enumerate(performance_legend):
+        x = details_x + (index % 4) * 185
+        y = details_y + (index // 4) * 28
         draw.rectangle(
             (x, y + 4, x + 18, y + 18),
-            fill=contest_background_color(contest_kind_id),
+            fill=performance_background_color(performance),
             outline=(130, 130, 130),
             width=1,
         )
         draw_fit_text(
             draw,
             (x + 24, y),
-            contest_kind_label(contest_kind_id),
-            210,
+            f"Perf {label}",
+            150,
             17,
             (40, 40, 40),
         )
@@ -926,6 +949,7 @@ def build_school_rank_embeds(
     html_changed: dict[str, bool],
     history: dict[str, Any],
     personal_frames: dict[str, dict[int, pd.DataFrame]] | None = None,
+    performance_frames: dict[str, dict[int, pd.DataFrame]] | None = None,
 ) -> tuple[list[SchoolRankMessagePart], bool, bool]:
     parts = []
     changed = False
@@ -997,6 +1021,7 @@ def build_school_rank_embeds(
             school_score=current_score,
             above_score=above_score,
             personal_frames=personal_frames,
+            performance_frames=performance_frames,
         )
         if image is not None:
             embed.set_image(url=f"attachment://{image.filename}")
@@ -1046,17 +1071,26 @@ class SchoolRank(commands.Cog):
         frames: dict[str, pd.DataFrame] | None = None,
         html_changed: dict[str, bool] | None = None,
         personal_frames: dict[str, dict[int, pd.DataFrame]] | None = None,
+        performance_frames: dict[str, dict[int, pd.DataFrame]] | None = None,
         history: dict[str, Any] | None = None,
     ) -> tuple[list[SchoolRankMessagePart], bool]:
         if frames is None or html_changed is None:
             frames, html_changed = fetch_school_rank_tables(school_type)
         if personal_frames is None:
             personal_frames, _ = fetch_personal_rank_tables(school_type)
+        if performance_frames is None:
+            performance_frames, _ = fetch_personal_rank_tables(school_type, "perf")
         if history is None:
             history = load_school_rank_history()
 
         parts, found, changed = build_school_rank_embeds(
-            school_name, school_type, frames, html_changed, history, personal_frames
+            school_name,
+            school_type,
+            frames,
+            html_changed,
+            history,
+            personal_frames,
+            performance_frames,
         )
         if changed:
             save_school_rank_history(history)
@@ -1115,6 +1149,10 @@ class SchoolRank(commands.Cog):
                 school_type: fetch_personal_rank_tables(school_type)[0]
                 for school_type in sorted({school_type for _, school_type in matches})
             }
+            performance_tables_by_type = {
+                school_type: fetch_personal_rank_tables(school_type, "perf")[0]
+                for school_type in sorted({school_type for _, school_type in matches})
+            }
 
             history = load_school_rank_history()
             parts = []
@@ -1129,6 +1167,7 @@ class SchoolRank(commands.Cog):
                     html_changed,
                     history,
                     personal_tables_by_type.get(school_type),
+                    performance_tables_by_type.get(school_type),
                 )
                 if not found:
                     continue
@@ -1281,6 +1320,11 @@ class SchoolRank(commands.Cog):
                 for school_type, (_, html_changed) in tables_by_type.items()
                 if any(html_changed.values())
             }
+            performance_tables_by_type = {
+                school_type: fetch_personal_rank_tables(school_type, "perf")[0]
+                for school_type, (_, html_changed) in tables_by_type.items()
+                if any(html_changed.values())
+            }
             parts_by_school = {}
             changed_by_school = {}
             for school_name, school_type in sorted(
@@ -1294,6 +1338,7 @@ class SchoolRank(commands.Cog):
                     html_changed,
                     history,
                     personal_tables_by_type.get(school_type),
+                    performance_tables_by_type.get(school_type),
                 )
                 school_key = (school_name, school_type)
                 parts_by_school[school_key] = parts if found else []

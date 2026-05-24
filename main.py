@@ -11,6 +11,7 @@ INITIAL_EXTENSIONS = [
     "cogs.help",
     "cogs.reminder",
     "cogs.result",
+    "cogs.perf_score",
     "cogs.threads",
     "cogs.contest_data",
     "cogs.affiliated_police",

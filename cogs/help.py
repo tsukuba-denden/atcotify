@@ -42,6 +42,11 @@ class Help(commands.Cog):
             inline=False,
         )
         embed.add_field(
+            name="`/perf_score_convert`",
+            value="AJLの内部perf/表示perfとscoreを相互変換します。複数perfから合計scoreも計算できます。",
+            inline=False,
+        )
+        embed.add_field(
             name="`/thread---set_channel`",
             value="コンテスト1時間前にスレッドを自動作成するチャンネルを設定します",
             inline=False,
