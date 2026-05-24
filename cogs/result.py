@@ -595,20 +595,24 @@ class Contest_result(commands.Cog):
                 contest["end_time"], "%Y-%m-%d %H:%M:%S"
             )
             if end_time <= now and not contest.get("result_sent", False):
-                guild_ids = self.results_config.keys()
-                sent_to_any_guild = False
-                for guild_id in guild_ids:
-                    if await self.send_contest_result(contest, guild_id):
-                        sent_to_any_guild = True
-                if sent_to_any_guild:
+                if not self.results_config:
                     contest["result_sent"] = True
-                    print(f"{contest['name']} のコンテスト結果の自動送信処理完了。")
+                    print(f"{contest['name']} のコンテスト結果送信先が未設定のため、スキップしました。")
                 else:
-                    print(f"{contest['name']} のコンテスト結果の自動送信に失敗。")
-                    self.retry_count += 1  # リトライカウントを増加
-                    if self.retry_count >= 10:
-                        print("リトライ回数が10回に達しました。自動送信を中止します。")
-                        break  # リトライ回数が10回に達したらループを抜ける
+                    guild_ids = self.results_config.keys()
+                    sent_to_any_guild = False
+                    for guild_id in guild_ids:
+                        if await self.send_contest_result(contest, guild_id):
+                            sent_to_any_guild = True
+                    if sent_to_any_guild:
+                        contest["result_sent"] = True
+                        print(f"{contest['name']} のコンテスト結果の自動送信処理完了。")
+                    else:
+                        print(f"{contest['name']} のコンテスト結果の自動送信に失敗。")
+                        self.retry_count += 1  # リトライカウントを増加
+                        if self.retry_count >= 10:
+                            print("リトライ回数が10回に達しました。自動送信を中止します。")
+                            break  # リトライ回数が10回に達したらループを抜ける
             updated_contests.append(contest)
         if updated_contests != self.contests:
             self.contests = updated_contests
