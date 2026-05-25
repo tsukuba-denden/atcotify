@@ -43,6 +43,10 @@ html_dir = "html/"
 GRADE_A_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_A_score.html"
 GRADE_H_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_H_score.html"
 BOT_SETTINGS_FILE = "bot_settings.json" # 追加
+CONTEST_EMBED_COLORS = {
+    "A": discord.Color.blue(),
+    "H": discord.Color.orange(),
+}
 
 
 class Tsukuba_student_rank(commands.Cog):
@@ -301,7 +305,7 @@ class Tsukuba_student_rank(commands.Cog):
             embed_a = discord.Embed(
                 title="アルゴリズム",
                 description=description_a,
-                color=discord.Color.blue(),
+                color=CONTEST_EMBED_COLORS["A"],
                 url=url_a,
             )
             embeds.append(embed_a)
@@ -315,7 +319,7 @@ class Tsukuba_student_rank(commands.Cog):
             embed_h = discord.Embed(
                 title="ヒューリスティック",
                 description=description_h,
-                color=discord.Color.blue(),
+                color=CONTEST_EMBED_COLORS["H"],
                 url=url_h,
             )
             embeds.append(embed_h)

@@ -48,9 +48,21 @@ CONTEST_TYPES = ("A", "H")
 SCHOOL_TYPES = ("junior_high", "high")
 MAX_SEARCH_RESULT_EMBEDS = 10
 CONTEST_LABELS = {"A": "アルゴリズム", "H": "ヒューリスティック"}
+CONTEST_EMBED_COLORS = {
+    "A": discord.Color.blue(),
+    "H": discord.Color.orange(),
+}
+CONTEST_IMAGE_ACCENTS = {
+    "A": (48, 112, 210),
+    "H": (230, 126, 34),
+}
+RATING_CONTEST_TYPE_PARAMS = {
+    "A": None,
+    "H": "heuristic",
+}
 CONTEST_DETAIL_LIMITS = {"A": 6, "H": 4}
 META_COLUMNS = {"順位", "ユーザID", "学校名", "都道府県", "学年", "スコア"}
-USER_RATING_CACHE: dict[str, int | None] = {}
+USER_RATING_CACHE: dict[tuple[str, str], int | None] = {}
 LINE_SEED_JP_DOWNLOAD_URL = "https://seed.line.me/src/images/fonts/LINE_Seed_JP.zip"
 LINE_SEED_JP_FONT_DIR = Path("font_cache/line_seed_jp")
 LINE_SEED_JP_FONT_NAMES = (
@@ -428,14 +440,20 @@ def to_optional_int(value: Any) -> int | None:
     return int(float(numeric))
 
 
-def fetch_user_rating(user_id: str) -> int | None:
-    if user_id in USER_RATING_CACHE:
-        return USER_RATING_CACHE[user_id]
+def fetch_user_rating(user_id: str, contest_type: str) -> int | None:
+    cache_key = (user_id, contest_type)
+    if cache_key in USER_RATING_CACHE:
+        return USER_RATING_CACHE[cache_key]
 
     try:
+        rating_contest_type = RATING_CONTEST_TYPE_PARAMS[contest_type]
+        params = None
+        if rating_contest_type is not None:
+            params = {"contestType": rating_contest_type}
         response = requests.get(
             f"https://atcoder.jp/users/{user_id}/history/json",
             headers={"User-Agent": "atcotify school rank graph"},
+            params=params,
             timeout=8,
         )
         response.raise_for_status()
@@ -443,11 +461,11 @@ def fetch_user_rating(user_id: str) -> int | None:
         rating = None
         if history:
             rating = int(history[-1]["NewRating"])
-        USER_RATING_CACHE[user_id] = rating
+        USER_RATING_CACHE[cache_key] = rating
         return rating
     except Exception as e:
-        print(f"Failed to fetch AtCoder rating for {user_id}: {e}")
-        USER_RATING_CACHE[user_id] = None
+        print(f"Failed to fetch AtCoder {contest_type} rating for {user_id}: {e}")
+        USER_RATING_CACHE[cache_key] = None
         return None
 
 
@@ -549,7 +567,7 @@ def extract_contributors(
                     user_id=user_id,
                     score=to_int_score(row["スコア"]),
                     details=details[:detail_limit],
-                    rating=fetch_user_rating(user_id),
+                    rating=fetch_user_rating(user_id, contest_type),
                 )
             )
 
@@ -732,12 +750,14 @@ def build_contribution_image(
 
     season_label = "Winter" if SEASON == "WINTER" else "Summer"
     contest_label = CONTEST_LABELS[contest_type]
+    contest_accent = CONTEST_IMAGE_ACCENTS[contest_type]
     draw.text(
         (left, 36),
         f"AtCoder Junior League {YEAR} {season_label} - {contest_label}部門",
         font=subtitle_font,
-        fill=(20, 20, 20),
+        fill=contest_accent,
     )
+    draw.line((left, 68, right, 68), fill=contest_accent, width=4)
     title = f"{school_name} ({rank}位)"
     title_width = draw.textlength(title, font=title_font)
     draw.text(((width - title_width) / 2, 78), title, font=title_font, fill=(0, 0, 0))
@@ -1009,7 +1029,7 @@ def build_school_rank_embeds(
         embed = discord.Embed(
             title=f"{contest_label}",
             description=description,
-            color=discord.Color.blue(),
+            color=CONTEST_EMBED_COLORS[contest_type],
             url=embed_url,
         )
         embed.set_author(name=format_school_label(school_name, school_type))

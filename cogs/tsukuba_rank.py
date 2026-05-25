@@ -41,6 +41,10 @@ AJL_RANKING_BASE_URL = (
     f"https://img.atcoder.jp/ajl{YEAR}{{}}/school_rankings_grades_1to3_{{}}.html"
 )
 BOT_SETTINGS_FILE = "bot_settings.json" # 追加
+CONTEST_EMBED_COLORS = {
+    "A": discord.Color.blue(),
+    "H": discord.Color.orange(),
+}
 
 
 class Tsukuba_rank(commands.Cog):
@@ -188,7 +192,7 @@ class Tsukuba_rank(commands.Cog):
                     if contest_type == "A"
                     else "ヒューリスティック",
                     description=description,
-                    color=discord.Color.blue(),
+                    color=CONTEST_EMBED_COLORS[contest_type],
                     url=embed_url,
                 )
                 embeds.append(embed)

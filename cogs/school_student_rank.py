@@ -37,6 +37,10 @@ LEGACY_TSUKUBA_STUDENT_RANK_FILE = Path("asset/tsukuba_student_rank.yaml")
 GRADE_A_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_A_score.html"
 GRADE_H_BASE_URL = f"https://img.atcoder.jp/ajl{YEAR}{{}}/grade_{{}}_rankings_H_score.html"
 CONTEST_TYPES = ("A", "H")
+CONTEST_EMBED_COLORS = {
+    "A": discord.Color.blue(),
+    "H": discord.Color.orange(),
+}
 RANK_KEYS = ("A", "H", "P_A", "P_H", "L_A", "L_H")
 SCHOOL_TYPES = ("junior_high", "high")
 MAX_SEARCH_RESULT_EMBEDS = 10
@@ -367,7 +371,7 @@ def build_school_student_rank_embeds(
         embed = discord.Embed(
             title=f"{contest_label}",
             description=description,
-            color=discord.Color.blue(),
+            color=CONTEST_EMBED_COLORS[contest_type],
             url=url,
         )
         embed.set_author(name=format_school_label(school_name, school_type))
