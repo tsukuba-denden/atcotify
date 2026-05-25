@@ -77,6 +77,7 @@ GRAPH_FONT_NAMES_BY_WEIGHT = {
     ),
 }
 LINE_SEED_JP_DOWNLOAD_ATTEMPTED = False
+SCHOOL_RANK_IMAGE_SCALE = 2
 
 
 @dataclass(frozen=True)
@@ -955,7 +956,30 @@ def build_contribution_image(
             (40, 40, 40),
         )
 
+    if diff_score > 0:
+        diff_legend_y = details_y + 66
+        draw.rectangle(
+            (details_x, diff_legend_y + 5, details_x + 22, diff_legend_y + 21),
+            fill=(255, 230, 185),
+            outline=(130, 130, 130),
+            width=1,
+        )
+        draw_fit_text(
+            draw,
+            (details_x + 30, diff_legend_y),
+            f"1つ上の学校との差分: {diff_score:,}pt",
+            right - details_x - 30,
+            22,
+            (80, 70, 50),
+            min_size=12,
+        )
+
     output = BytesIO()
+    if SCHOOL_RANK_IMAGE_SCALE > 1:
+        image = image.resize(
+            (image.width * SCHOOL_RANK_IMAGE_SCALE, image.height * SCHOOL_RANK_IMAGE_SCALE),
+            Image.Resampling.LANCZOS,
+        )
     image.save(output, format="PNG")
     return SchoolRankImage(
         filename=school_image_filename(school_name, school_type, contest_type),
