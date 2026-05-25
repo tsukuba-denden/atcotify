@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import hashlib
 from io import BytesIO, StringIO
 from pathlib import Path
+import time
 from typing import Any
 import zipfile
 
@@ -48,14 +49,6 @@ CONTEST_TYPES = ("A", "H")
 SCHOOL_TYPES = ("junior_high", "high")
 MAX_SEARCH_RESULT_EMBEDS = 10
 CONTEST_LABELS = {"A": "アルゴリズム", "H": "ヒューリスティック"}
-CONTEST_EMBED_COLORS = {
-    "A": discord.Color.blue(),
-    "H": discord.Color.orange(),
-}
-CONTEST_IMAGE_ACCENTS = {
-    "A": (48, 112, 210),
-    "H": (230, 126, 34),
-}
 RATING_CONTEST_TYPE_PARAMS = {
     "A": None,
     "H": "heuristic",
@@ -63,6 +56,8 @@ RATING_CONTEST_TYPE_PARAMS = {
 CONTEST_DETAIL_LIMITS = {"A": 6, "H": 4}
 META_COLUMNS = {"順位", "ユーザID", "学校名", "都道府県", "学年", "スコア"}
 USER_RATING_CACHE: dict[tuple[str, str], int | None] = {}
+USER_RATING_FETCH_RETRIES = 3
+USER_RATING_RETRY_DELAY_SECONDS = 1.0
 LINE_SEED_JP_DOWNLOAD_URL = "https://seed.line.me/src/images/fonts/LINE_Seed_JP.zip"
 LINE_SEED_JP_FONT_DIR = Path("font_cache/line_seed_jp")
 LINE_SEED_JP_FONT_NAMES = (
@@ -445,28 +440,36 @@ def fetch_user_rating(user_id: str, contest_type: str) -> int | None:
     if cache_key in USER_RATING_CACHE:
         return USER_RATING_CACHE[cache_key]
 
-    try:
-        rating_contest_type = RATING_CONTEST_TYPE_PARAMS[contest_type]
-        params = None
-        if rating_contest_type is not None:
-            params = {"contestType": rating_contest_type}
-        response = requests.get(
-            f"https://atcoder.jp/users/{user_id}/history/json",
-            headers={"User-Agent": "atcotify school rank graph"},
-            params=params,
-            timeout=8,
-        )
-        response.raise_for_status()
-        history = response.json()
-        rating = None
-        if history:
-            rating = int(history[-1]["NewRating"])
-        USER_RATING_CACHE[cache_key] = rating
-        return rating
-    except Exception as e:
-        print(f"Failed to fetch AtCoder {contest_type} rating for {user_id}: {e}")
-        USER_RATING_CACHE[cache_key] = None
-        return None
+    rating_contest_type = RATING_CONTEST_TYPE_PARAMS[contest_type]
+    params = None
+    if rating_contest_type is not None:
+        params = {"contestType": rating_contest_type}
+
+    for attempt in range(1, USER_RATING_FETCH_RETRIES + 1):
+        try:
+            response = requests.get(
+                f"https://atcoder.jp/users/{user_id}/history/json",
+                headers={"User-Agent": "atcotify school rank graph"},
+                params=params,
+                timeout=8,
+            )
+            response.raise_for_status()
+            history = response.json()
+            rating = None
+            if history:
+                rating = int(history[-1]["NewRating"])
+            USER_RATING_CACHE[cache_key] = rating
+            return rating
+        except Exception as e:
+            print(
+                f"Failed to fetch AtCoder {contest_type} rating for {user_id} "
+                f"({attempt}/{USER_RATING_FETCH_RETRIES}): {e}"
+            )
+            if attempt < USER_RATING_FETCH_RETRIES:
+                time.sleep(USER_RATING_RETRY_DELAY_SECONDS)
+
+    USER_RATING_CACHE[cache_key] = None
+    return None
 
 
 def rating_text_color(rating: int | None) -> tuple[int, int, int]:
@@ -750,14 +753,12 @@ def build_contribution_image(
 
     season_label = "Winter" if SEASON == "WINTER" else "Summer"
     contest_label = CONTEST_LABELS[contest_type]
-    contest_accent = CONTEST_IMAGE_ACCENTS[contest_type]
     draw.text(
         (left, 36),
         f"AtCoder Junior League {YEAR} {season_label} - {contest_label}部門",
         font=subtitle_font,
-        fill=contest_accent,
+        fill=(20, 20, 20),
     )
-    draw.line((left, 68, right, 68), fill=contest_accent, width=4)
     title = f"{school_name} ({rank}位)"
     title_width = draw.textlength(title, font=title_font)
     draw.text(((width - title_width) / 2, 78), title, font=title_font, fill=(0, 0, 0))
@@ -1029,7 +1030,7 @@ def build_school_rank_embeds(
         embed = discord.Embed(
             title=f"{contest_label}",
             description=description,
-            color=CONTEST_EMBED_COLORS[contest_type],
+            color=discord.Color.blue(),
             url=embed_url,
         )
         embed.set_author(name=format_school_label(school_name, school_type))
