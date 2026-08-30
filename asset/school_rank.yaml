@@ -1,9 +1,9 @@
 junior_high:筑波大学附属中学校:
   A:
-    previous_rank: 61
-    previous_score: 2557
-    last_rank: 61
-    last_score: 2557
+    previous_rank: 66
+    previous_score: 5825
+    last_rank: 67
+    last_score: 5895
   H:
     previous_rank: 25
     previous_score: 20171
@@ -42,3 +42,14 @@ high:開成高等学校:
     previous_score: null
     last_rank: null
     last_score: null
+high:筑波大学附属高等学校:
+  A:
+    previous_rank: 13
+    previous_score: 503720
+    last_rank: 13
+    last_score: 510319
+  H:
+    previous_rank: 6
+    previous_score: 268314
+    last_rank: 6
+    last_score: 268314

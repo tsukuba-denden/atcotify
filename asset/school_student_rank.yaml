@@ -21,7 +21,7 @@ junior_high:筑波大学附属中学校:
     grade1: []
     grade2:
     - name: Ohkate
-      rank: '46'
+      rank: '52'
     grade3: []
   P_H:
     grade1: []
@@ -31,9 +31,102 @@ junior_high:筑波大学附属中学校:
     grade1: []
     grade2:
     - name: Ohkate
-      rank: '46'
+      rank: '52'
     grade3: []
   L_H:
     grade1: []
     grade2: []
     grade3: []
+high:筑波大学附属高等学校:
+  A:
+    grade1: []
+    grade2: []
+    grade3: []
+  H:
+    grade1: []
+    grade2: []
+    grade3: []
+  P_A:
+    grade1:
+    - name: yuubinnkyoku
+      rank: '36'
+    - name: mainay
+      rank: '40'
+    - name: lemonydrink
+      rank: '68'
+    grade2:
+    - name: frostflower
+      rank: '46'
+    - name: uiroumochi
+      rank: '50'
+    - name: Lsq_nine
+      rank: '165'
+    grade3:
+    - name: Astroseek
+      rank: '16'
+    - name: taiki1121
+      rank: '34'
+    - name: neko10
+      rank: '126'
+  P_H:
+    grade1:
+    - name: yuubinnkyoku
+      rank: '13'
+    - name: lemonydrink
+      rank: '18'
+    grade2:
+    - name: frostflower
+      rank: '10'
+    - name: Lsq_nine
+      rank: '16'
+    - name: uiroumochi
+      rank: '29'
+    grade3:
+    - name: Nom8
+      rank: '40'
+    - name: taiki1121
+      rank: '43'
+    - name: neko10
+      rank: '53'
+  L_A:
+    grade1:
+    - name: yuubinnkyoku
+      rank: '31'
+    - name: mainay
+      rank: '41'
+    - name: lemonydrink
+      rank: '69'
+    grade2:
+    - name: frostflower
+      rank: '46'
+    - name: uiroumochi
+      rank: '50'
+    - name: Lsq_nine
+      rank: '165'
+    grade3:
+    - name: Astroseek
+      rank: '16'
+    - name: taiki1121
+      rank: '34'
+    - name: neko10
+      rank: '126'
+  L_H:
+    grade1:
+    - name: yuubinnkyoku
+      rank: '13'
+    - name: lemonydrink
+      rank: '18'
+    grade2:
+    - name: frostflower
+      rank: '10'
+    - name: Lsq_nine
+      rank: '16'
+    - name: uiroumochi
+      rank: '29'
+    grade3:
+    - name: Nom8
+      rank: '40'
+    - name: taiki1121
+      rank: '43'
+    - name: neko10
+      rank: '53'
