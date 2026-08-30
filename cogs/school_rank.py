@@ -738,34 +738,46 @@ def build_contribution_image(
 
     width = 1320
     left = 110
-    right = 1150
+    right = 1250
     graph_top = 205
     graph_height = 695
     footer_top = graph_top + graph_height + 20
-    height = footer_top + 120
+    height = footer_top + 105
     image = Image.new("RGB", (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(image)
 
     title_font = load_graph_font(56, "bold")
     subtitle_font = load_graph_font(23, "regular")
-    score_font = load_graph_font(28, "bold")
+    score_font = load_graph_font(44, "bold")
+    participant_font = load_graph_font(18, "regular")
     axis_font = load_graph_font(30, "regular")
     small_font = load_graph_font(14, "regular")
 
     season_label = "Winter" if SEASON == "WINTER" else "Summer"
     contest_label = CONTEST_LABELS[contest_type]
+    subtitle = f"AtCoder Junior League {YEAR} {season_label} - {contest_label}部門"
+    subtitle_width = draw.textlength(subtitle, font=subtitle_font)
     draw.text(
-        (left, 36),
-        f"AtCoder Junior League {YEAR} {season_label} - {contest_label}部門",
+        ((width - subtitle_width) / 2, 36),
+        subtitle,
         font=subtitle_font,
-        fill=(20, 20, 20),
+        fill=(90, 90, 90),
     )
     title = f"{school_name} ({rank}位)"
     title_width = draw.textlength(title, font=title_font)
     draw.text(((width - title_width) / 2, 78), title, font=title_font, fill=(0, 0, 0))
-    score_text = f"{school_score:,}pt"
+    score_text = f"{school_score:,} pt"
     score_width = draw.textlength(score_text, font=score_font)
-    draw.text(((width - score_width) / 2, 150), score_text, font=score_font, fill=(0, 0, 0))
+    draw.text(((width - score_width) / 2, 138), score_text, font=score_font, fill=(0, 0, 0))
+
+    participant_text = f"n={len(contributors)}"
+    participant_width = draw.textlength(participant_text, font=participant_font)
+    draw.text(
+        (right - participant_width, 179),
+        participant_text,
+        font=participant_font,
+        fill=(110, 110, 110),
+    )
 
     name_area_width = 330
     score_area_left = left + name_area_width
@@ -773,10 +785,11 @@ def build_contribution_image(
 
     tick_step = nice_axis_step(graph_total)
     max_tick = ((graph_total + tick_step - 1) // tick_step) * tick_step
+    grid_line_ys = []
     if max_tick:
         for tick in range(tick_step, max_tick + 1, tick_step):
             y = graph_top + graph_height - int(graph_height * tick / max_tick)
-            draw.line((65, y, width - 55, y), fill=(190, 190, 190), width=1)
+            grid_line_ys.append(y)
             axis_label = format_axis_label(tick)
             label_bbox = draw.textbbox((0, 0), axis_label, font=axis_font)
             label_width = label_bbox[2] - label_bbox[0]
@@ -798,7 +811,13 @@ def build_contribution_image(
         y1 = current_bottom
         text_fill = rating_text_color(contributor.rating)
         name_background = soften_color(text_fill)
-        draw.rectangle((left, y0, score_area_left, y1), fill=name_background, outline=(0, 0, 0), width=1)
+        segment_has_border = y1 - y0 > 8
+        draw.rectangle(
+            (left, y0, score_area_left, y1),
+            fill=name_background,
+            outline=(0, 0, 0) if segment_has_border else None,
+            width=1,
+        )
         sub_bottom = y1
         sub_total = 0
         for detail in contributor.details:
@@ -812,10 +831,11 @@ def build_contribution_image(
             sub_height = max(1, int(segment_height * score / contributor.score))
             sub_y0 = max(y0, sub_bottom - sub_height)
             fill = performance_background_color(detail.performance)
+            sub_has_border = sub_bottom - sub_y0 > 8
             draw.rectangle(
                 (score_area_left, sub_y0, right, sub_bottom),
                 fill=fill,
-                outline=(150, 150, 180),
+                outline=(150, 150, 180) if sub_has_border else None,
                 width=1,
             )
             sub_available_height = sub_bottom - sub_y0
@@ -839,10 +859,11 @@ def build_contribution_image(
             sub_total += score
 
         if sub_total < contributor.score:
+            remainder_has_border = sub_bottom - y0 > 8
             draw.rectangle(
                 (score_area_left, y0, right, sub_bottom),
                 fill=(230, 230, 230),
-                outline=(150, 150, 180),
+                outline=(150, 150, 180) if remainder_has_border else None,
                 width=1,
             )
             sub_available_height = sub_bottom - y0
@@ -863,8 +884,9 @@ def build_contribution_image(
                     weight="regular",
                 )
 
-        draw.rectangle((left, y0, right, y1), outline=(0, 0, 0), width=2)
-        draw.line((score_area_left, y0, score_area_left, y1), fill=(0, 0, 0), width=2)
+        if segment_has_border:
+            draw.rectangle((left, y0, right, y1), outline=(0, 0, 0), width=2)
+            draw.line((score_area_left, y0, score_area_left, y1), fill=(0, 0, 0), width=2)
 
         label_text = f"{contributor.user_id}: {contributor.score}"
         available_height = y1 - y0
@@ -903,7 +925,12 @@ def build_contribution_image(
         segment_height = max(1, int(graph_height * score / max_tick)) if max_tick else 1
         y0 = max(graph_top, current_bottom - segment_height)
         y1 = current_bottom
-        draw.rectangle((left, y0, right, y1), fill=fill, outline=(0, 0, 0), width=2)
+        draw.rectangle(
+            (left, y0, right, y1),
+            fill=fill,
+            outline=(0, 0, 0) if y1 - y0 > 8 else None,
+            width=2,
+        )
         label_text = f"{label}: {score}"
         available_height = y1 - y0
         if available_height >= 34:
@@ -920,13 +947,19 @@ def build_contribution_image(
             draw.text((left + 8, y0), label_text, font=small_font, fill=text_fill)
         current_bottom = y0
 
-    label_x = left
-    label_y = footer_top
-    draw.text((label_x, label_y), f"{rank}th", font=score_font, fill=(0, 0, 0))
-    draw.text((label_x, label_y + 34), f"{school_name}", font=score_font, fill=(0, 0, 0))
-    draw.text((label_x, label_y + 68), f"(n={len(contributors)})", font=score_font, fill=(0, 0, 0))
+    # Draw grid lines after the opaque score blocks so they remain visible.
+    for y in grid_line_ys:
+            draw.line((left - 12, y, left, y), fill=(190, 190, 190), width=1)
+    draw.rectangle(
+        (left, graph_top, right, graph_top + graph_height),
+        outline=(0, 0, 0),
+        width=2,
+    )
 
-    details_x = 430
+    legend_columns = 4
+    legend_column_width = 185
+    legend_width = legend_columns * legend_column_width
+    details_x = (width - legend_width) // 2
     details_y = footer_top
     performance_legend = [
         ("<400", None),
@@ -939,8 +972,8 @@ def build_contribution_image(
         ("2800", 2800),
     ]
     for index, (label, performance) in enumerate(performance_legend):
-        x = details_x + (index % 4) * 185
-        y = details_y + (index // 4) * 28
+        x = details_x + (index % legend_columns) * legend_column_width
+        y = details_y + (index // legend_columns) * 28
         draw.rectangle(
             (x, y + 4, x + 18, y + 18),
             fill=performance_background_color(performance),
@@ -958,17 +991,27 @@ def build_contribution_image(
 
     if diff_score > 0:
         diff_legend_y = details_y + 66
+        diff_label = f"1つ上の学校との差分: {diff_score:,}pt"
+        diff_label_font = load_graph_font(22, "regular")
+        diff_label_width = draw.textlength(diff_label, font=diff_label_font)
+        diff_legend_width = 30 + diff_label_width
+        diff_legend_x = (width - diff_legend_width) / 2
         draw.rectangle(
-            (details_x, diff_legend_y + 5, details_x + 22, diff_legend_y + 21),
+            (
+                diff_legend_x,
+                diff_legend_y + 5,
+                diff_legend_x + 22,
+                diff_legend_y + 21,
+            ),
             fill=(255, 230, 185),
             outline=(130, 130, 130),
             width=1,
         )
         draw_fit_text(
             draw,
-            (details_x + 30, diff_legend_y),
-            f"1つ上の学校との差分: {diff_score:,}pt",
-            right - details_x - 30,
+            (diff_legend_x + 30, diff_legend_y),
+            diff_label,
+            int(diff_label_width) + 1,
             22,
             (80, 70, 50),
             min_size=12,
