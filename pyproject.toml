@@ -28,5 +28,5 @@ convention = "google"
 
 [dependency-groups]
 dev = [
-    "icecream>=2.1.4",
+    "icecream>=2.2.0",
 ]
