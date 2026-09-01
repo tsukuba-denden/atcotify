@@ -17,7 +17,7 @@ dependencies = [
     "pillow>=12.2.0",
     "poppler-utils>=0.1.0",
     "pyyaml>=6.0.2",
-    "requests>=2.32.3",
+    "requests>=2.33.1",
     "ruff>=0.8.4",
 ]
 
